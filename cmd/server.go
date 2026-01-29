@@ -396,6 +396,12 @@ func RunServer() {
 			wsRootAuthrized.GET("/terminal", client.EstablishConnection)
 		}
 
+		// 管理员终端 WebSocket 路由（用于 Choreo 等平台，因为 REST 端点不支持 WebSocket）
+		wsAdminAuthrized := wsRouter.Group("/api/admin", api.AdminAuthMiddleware())
+		{
+			wsAdminAuthrized.GET("/client/:uuid/terminal", api.RequestTerminal)
+		}
+
 		wsSrv = &http.Server{
 			Addr:    flags.WsListen,
 			Handler: wsRouter,
