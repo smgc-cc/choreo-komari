@@ -10,7 +10,12 @@ RUN apk add --no-cache \
     gzip \
     sqlite \
     tzdata \
+    curl \
     && rm -rf /var/cache/apk/*
+
+# 安装 supercronic (容器友好的 cron 替代品)
+RUN curl -fsSL "https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64" -o /usr/local/bin/supercronic \
+    && chmod +x /usr/local/bin/supercronic
 
 # 复制二进制文件
 COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/komari-agent
@@ -38,6 +43,7 @@ COPY Caddyfile /app/Caddyfile
 # 复制并授权脚本
 COPY backup.sh /app/backup.sh
 COPY entrypoint.sh /app/entrypoint.sh
+COPY crontab /app/crontab
 RUN chmod +x /app/*.sh
 
 # 切换到 Choreo 指定用户

@@ -23,17 +23,10 @@ echo "Initializing directory structure in /tmp..."
 mkdir -p /tmp/theme
 
 # ==============================
-# 2. 模拟定时备份任务 (替代 crond)
+# 2. 启动定时备份任务 (supercronic)
 # ==============================
-# 由于无法使用 crond，我们用一个后台循环来执行备份
-start_backup_loop() {
-    while true; do
-        sleep 7200
-        echo "Starting scheduled backup..."
-        /app/backup.sh backup >> /tmp/backup.log 2>&1
-    done
-}
-start_backup_loop &
+echo "Starting supercronic for scheduled backups..."
+supercronic /app/crontab &
 
 # ==============================
 # 3. 尝试恢复备份
