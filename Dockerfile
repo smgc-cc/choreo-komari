@@ -1,42 +1,27 @@
-FROM ghcr.io/komari-monitor/komari:latest
-
-USER root
-
-# 安装工具
-RUN apk add --no-cache \
-    aws-cli \
-    tar \
-    gzip \
-    sqlite \
-    tzdata \
-    && rm -rf /var/cache/apk/*
-
-# 复制二进制文件
-COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/komari-agent
+FROM alpine:3.21
 
 WORKDIR /app
 
-# 解决只读文件系统
-# 1. 删除原有的 data 目录
-# 2. 建立软链接，将 data 指向 /tmp，这样程序读写 ./data/ 时实际在读写 /tmp/
-RUN rm -rf /app/data && ln -s /tmp /app/data
+# Docker buildx 会在构建时自动填充这些变量
+ARG TARGETOS
+ARG TARGETARCH
 
-# 设置环境变量
-ENV TZ=Asia/Shanghai
+RUN apk add --no-cache tzdata
+
+COPY komari-${TARGETOS}-${TARGETARCH} /app/komari
+
+RUN chmod +x /app/komari
+
 ENV GIN_MODE=release
 ENV KOMARI_DB_TYPE=sqlite
-# 数据库路径现在通过软链接等同于 /app/data/komari.db
-ENV KOMARI_DB_FILE=/tmp/komari.db
+ENV KOMARI_DB_FILE=/app/data/komari.db
+ENV KOMARI_DB_HOST=localhost
+ENV KOMARI_DB_PORT=3306
+ENV KOMARI_DB_USER=root
+ENV KOMARI_DB_PASS=
+ENV KOMARI_DB_NAME=komari
 ENV KOMARI_LISTEN=0.0.0.0:25774
-
-# 复制并授权脚本
-COPY backup.sh /app/backup.sh
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/*.sh
-
-# 切换到 Choreo 指定用户
-USER 10014
 
 EXPOSE 25774
 
-CMD ["/app/entrypoint.sh"]
+CMD ["/app/komari", "server"]
