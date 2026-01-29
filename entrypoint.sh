@@ -50,12 +50,12 @@ if [ -n "$KOMARI_SECRET" ]; then
     (
         # --- 步骤 4.1: 等待 Server 端口就绪 ---
         count=0
-        while ! nc -z localhost 25774 2>/dev/null && [ $count -lt 30 ]; do
+        while ! nc -z localhost 8080 2>/dev/null && [ $count -lt 30 ]; do
             sleep 1
             count=$((count+1))
         done
 
-        if ! nc -z localhost 25774 2>/dev/null; then
+        if ! nc -z localhost 8080 2>/dev/null; then
              echo "Error: Komari Server failed to start within 30s. Agent skipped."
              exit 1
         fi
@@ -86,14 +86,20 @@ if [ -n "$KOMARI_SECRET" ]; then
 
         # --- 步骤 4.3: 启动 Agent ---
         echo "Starting komari-agent..."
-        /app/komari-agent -e http://localhost:25774 -t "${KOMARI_SECRET}" --disable-auto-update
+        /app/komari-agent -e http://localhost:8080 -t "${KOMARI_SECRET}" --disable-auto-update
     ) &
 else
     echo "Warning: KOMARI_SECRET is not set, skipping komari-agent"
 fi
 
 # ==============================
-# 4. 启动主应用
+# 4. 启动 Caddy 作为后台进程
+# ==============================
+echo "Starting Caddy on port 8081..."
+caddy run --config /app/Caddyfile --adapter caddyfile &
+
+# ==============================
+# 5. 启动主应用
 # ==============================
 echo "Starting app..."
 # 确保主应用也读取 /tmp/komari.db (通过 Dockerfile 中的 ENV 已经指定)
