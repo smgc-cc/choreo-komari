@@ -1,7 +1,18 @@
 # Dockerfile for Choreo deployment
 # 使用多阶段构建，从源码编译
 
-# ============ 构建阶段 ============
+# ============ 前端构建阶段 ============
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+# 克隆并构建前端
+RUN apk add --no-cache git && \
+    git clone --depth 1 https://github.com/komari-monitor/komari-web.git . && \
+    npm install && \
+    npm run build
+
+# ============ 后端构建阶段 ============
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
@@ -15,6 +26,9 @@ RUN go mod download
 
 # 复制源代码
 COPY . .
+
+# 从前端构建阶段复制 dist 目录
+COPY --from=frontend-builder /frontend/dist ./public/dist
 
 # 构建二进制文件
 RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o komari .
@@ -39,7 +53,6 @@ RUN adduser -D -u 10001 -g komari komari
 
 # 从构建阶段复制二进制文件
 COPY --from=builder /build/komari /app/komari
-COPY --from=builder /build/public/dist /app/public/dist
 COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/komari-agent
 
 # 设置权限
