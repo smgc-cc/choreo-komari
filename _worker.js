@@ -140,19 +140,38 @@ async function handleWebSocket(request, url) {
 }
 
 /**
+ * 判断是否是 SPA 路由（非 API 且非静态资源）
+ */
+function isSPARoute(path) {
+  const isApiPath = path.startsWith('/api/');
+  const isStaticAsset = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|avif)$/i.test(path);
+  const isSpecialPath = path === '/favicon.ico' || path === '/manifest.json' || path.startsWith('/themes/');
+  return !isApiPath && !isStaticAsset && !isSpecialPath;
+}
+
+/**
  * 处理 HTTP 请求
  */
 async function handleHTTP(request, url) {
   const path = url.pathname;
+  let method = request.method;
+
+  // Safari 等浏览器会对页面链接发起 HEAD 预取请求
+  // 对于 SPA 路由的 HEAD 请求，转换为 GET 请求以获得正确响应
+  if (method === 'HEAD' && isSPARoute(path)) {
+    console.log(`[HTTP] Converting HEAD to GET for SPA route: ${path}`);
+    method = 'GET';
+  }
+
   let upstreamUrl = `https://${CHOREO_ORIGIN}${HTTP_PATH_PREFIX}${path}${url.search}`;
 
-  console.log(`[HTTP] Proxying to: ${upstreamUrl}`);
+  console.log(`[HTTP] Proxying ${method} to: ${upstreamUrl}`);
 
   const headers = cloneHeaders(request.headers, CHOREO_ORIGIN);
 
   // 对于有请求体的请求，先读取为 ArrayBuffer
   let body = null;
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  if (method !== "GET" && method !== "HEAD") {
     try {
       body = await request.arrayBuffer();
     } catch (e) {
@@ -162,7 +181,7 @@ async function handleHTTP(request, url) {
 
   // 手动处理重定向，保持请求方法不变
   let upstreamRequest = new Request(upstreamUrl, {
-    method: request.method,
+    method: method,
     headers: headers,
     body: body,
     redirect: "manual",
@@ -191,7 +210,7 @@ async function handleHTTP(request, url) {
       console.log(`[HTTP] Following redirect to: ${redirectUrl}`);
 
       upstreamRequest = new Request(redirectUrl, {
-        method: request.method,
+        method: method,
         headers: headers,
         body: body,
         redirect: "manual",
