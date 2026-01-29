@@ -1,87 +1,46 @@
-# Dockerfile for Choreo deployment
-# 使用多阶段构建，从源码编译
+FROM ghcr.io/komari-monitor/komari:latest
 
-# ============ 前端构建阶段 ============
-FROM node:20-alpine AS frontend-builder
+USER root
 
-WORKDIR /frontend
-
-# 克隆并构建前端
-RUN apk add --no-cache git && \
-    git clone --depth 1 https://github.com/komari-monitor/komari-web.git . && \
-    npm install && \
-    npm run build
-
-# ============ 后端构建阶段 ============
-FROM golang:1.24-alpine AS builder
-
-WORKDIR /build
-
-# 安装构建依赖
-RUN apk add --no-cache git gcc musl-dev
-
-# 复制 go.mod 和 go.sum 先下载依赖（利用缓存）
-COPY go.mod go.sum ./
-RUN go mod download
-
-# 复制源代码
-COPY . .
-
-# 从前端构建阶段复制 dist 目录
-COPY --from=frontend-builder /frontend/dist ./public/dist
-
-# 构建二进制文件
-RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o komari .
-
-# ============ 运行阶段 ============
-FROM alpine:3.21
-
-WORKDIR /app
-
-# 安装运行时依赖
+# 安装工具
 RUN apk add --no-cache \
+    caddy \
     aws-cli \
     tar \
     gzip \
     sqlite \
     tzdata \
-    ca-certificates \
     && rm -rf /var/cache/apk/*
 
-# Choreo 要求：创建非 root 用户，UID 必须在 10000-20000 范围内
-RUN adduser -D -u 10001 -g komari komari
-
-# 从构建阶段复制二进制文件
-COPY --from=builder /build/komari /app/komari
+# 复制二进制文件
 COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/komari-agent
 
-# 设置权限
-RUN chmod +x /app/komari && \
-    chown -R komari:komari /app
+WORKDIR /app
 
-# 解决只读文件系统
+# --- 关键修复：解决只读文件系统 ---
 # 1. 删除原有的 data 目录
 # 2. 建立软链接，将 data 指向 /tmp，这样程序读写 ./data/ 时实际在读写 /tmp/
 RUN rm -rf /app/data && ln -s /tmp /app/data
+
+# 设置环境变量
+ENV TZ=Asia/Shanghai
+ENV GIN_MODE=release
+ENV KOMARI_DB_TYPE=sqlite
+# 数据库路径现在通过软链接等同于 /app/data/komari.db
+ENV KOMARI_DB_FILE=/tmp/komari.db
+ENV KOMARI_LISTEN=0.0.0.0:8080
+
+# 复制 Caddy 配置文件
+COPY Caddyfile /app/Caddyfile
 
 # 复制并授权脚本
 COPY backup.sh /app/backup.sh
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/*.sh
 
-# 切换到非 root 用户
-USER 10001
+# 切换到 Choreo 指定用户
+USER 10014
 
-# 环境变量配置
-ENV TZ=Asia/Shanghai
-ENV GIN_MODE=release
-ENV KOMARI_DB_TYPE=sqlite
-ENV KOMARI_DB_FILE=/tmp/komari.db
-ENV KOMARI_LISTEN=0.0.0.0:8080
-ENV KOMARI_WS_LISTEN=0.0.0.0:8081
-
-# 暴露端口：HTTP (8080) 和 WebSocket (8081)
 EXPOSE 8080 8081
 
-# 启动命令
 CMD ["/app/entrypoint.sh"]
