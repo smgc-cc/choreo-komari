@@ -1,0 +1,27 @@
+# Choreo Component Configuration
+# 详细文档: https://wso2.com/choreo/docs/develop-components/configure-endpoints/
+
+schemaVersion: 1.2
+
+# 端点配置
+endpoints:
+  # HTTP 端点（前端 + REST API）- 设为默认端点
+  - name: komari
+    displayName: Komari HTTP
+    service:
+      basePath: /
+      port: 8080
+    type: REST
+    networkVisibilities:
+      - Public
+
+  # WebSocket 端点（Agent 连接）
+  - name: komari_ws
+    displayName: Komari WebSocket
+    service:
+      # Agent 连接路径: wss://xxx.choreoapps.dev/komari_ws/api/clients/report
+      basePath: /
+      port: 8081
+    type: WS
+    networkVisibilities:
+      - Public
