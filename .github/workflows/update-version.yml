@@ -62,8 +62,8 @@ jobs:
 
               text_content = f'🚀 <b>Komari (Choreo) Update Detected!</b>\n\n<b>New Version:</b> {version}\n\n{body_with_links}'
               
-              if len(text_content) > 400:
-                  text_content = text_content[:400] + '\n...(content truncated)...'
+              if len(text_content) > 4000:
+                  text_content = text_content[:4000] + '\n...(content truncated)...'
 
               url = f'https://api.telegram.org/bot{token}/sendMessage'
               
