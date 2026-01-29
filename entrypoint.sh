@@ -17,34 +17,38 @@ if [ -z "$KOMARI_AGENT_UUID" ]; then
 fi
 
 # ==============================
-# 1. 模拟定时备份任务 (替代 crond)
+# 1. 初始化 /tmp 目录结构
+# ==============================
+echo "Initializing directory structure in /tmp..."
+mkdir -p /tmp/theme
+
+# ==============================
+# 2. 模拟定时备份任务 (替代 crond)
 # ==============================
 # 由于无法使用 crond，我们用一个后台循环来执行备份
 start_backup_loop() {
-    echo "Starting background backup loop (every 12 hours)..."
     while true; do
-        # 每次等待 12 小时（43200秒）
-        sleep 43200
-        echo "Running scheduled backup..."
+        sleep 7200
+        echo "Starting scheduled backup..."
         /app/backup.sh backup >> /tmp/backup.log 2>&1
     done
 }
 start_backup_loop &
 
 # ==============================
-# 2. 尝试恢复备份
+# 3. 尝试恢复备份
 # ==============================
 echo "Restoring backup if available..."
 # 注意：你的 backup.sh 内部也需要确保恢复的目标是 /tmp/komari.db
 /app/backup.sh restore
 
 # ==============================
-# 3. 启动 komari-agent
+# 4. 启动 komari-agent
 # ==============================
 if [ -n "$KOMARI_SECRET" ]; then
     echo "Starting komari-agent setup process..."
     (
-        # --- 步骤 3.1: 等待 Server 端口就绪 ---
+        # --- 步骤 4.1: 等待 Server 端口就绪 ---
         count=0
         while ! nc -z localhost 25774 2>/dev/null && [ $count -lt 30 ]; do
             sleep 1
@@ -58,7 +62,7 @@ if [ -n "$KOMARI_SECRET" ]; then
         
         echo "Komari Server is ready. Checking database..."
 
-        # --- 步骤 3.2: 检查并注入 clients 数据 ---
+        # --- 步骤 4.2: 检查并注入 clients 数据 ---
         if [ -f "$DB_FILE" ]; then
             # 确保使用 /tmp/komari.db
             ROW_COUNT=$(sqlite3 "$DB_FILE" "SELECT count(*) FROM clients;" 2>/dev/null || echo "0")
@@ -80,7 +84,7 @@ if [ -n "$KOMARI_SECRET" ]; then
             echo "Warning: Database file not found at $DB_FILE, skipping injection."
         fi
 
-        # --- 步骤 3.3: 启动 Agent ---
+        # --- 步骤 4.3: 启动 Agent ---
         echo "Starting komari-agent..."
         /app/komari-agent -e http://localhost:25774 -t "${KOMARI_SECRET}" --disable-auto-update
     ) &
