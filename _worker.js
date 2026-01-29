@@ -22,7 +22,6 @@
 // ============ 配置区域 ============
 // 请根据你的 Choreo 部署修改以下配置
 
-// CHOREO_ORIGIN 和 PATH 需要替换成实际的
 const CHOREO_ORIGIN = "uuid-dev.e1-us-east-azure.choreoapis.dev";
 const HTTP_PATH_PREFIX = "/default/komari/v1.0";
 const WS_PATH_PREFIX = "/default/komari/komari_ws/v1.0";
@@ -96,23 +95,18 @@ function handleCORS() {
  */
 async function handleWebSocket(request, url) {
   let path = url.pathname;
-  let search = url.search;
 
-  // Choreo WS 端点只允许特定路径（如 /api/clients/terminal）
-  // 将 /api/admin/client/:uuid/terminal 重写为 /api/clients/terminal?browser=true&target=:uuid
+  // Choreo WS 端点只允许 /api/clients/* 路径
+  // 将 /api/admin/client/:uuid/terminal 重写为 /api/clients/admin-terminal/:uuid
   // Caddy 会将其还原回原始路径
   const adminTerminalMatch = path.match(/^\/api\/admin\/client\/([^/]+)\/terminal$/);
   if (adminTerminalMatch) {
     const uuid = adminTerminalMatch[1];
-    // 使用已存在的 /api/clients/terminal 路径，通过查询参数区分
-    path = `/api/clients/terminal`;
-    // 保留原有查询参数，添加新参数
-    const separator = search ? '&' : '?';
-    search = `${search}${separator}browser=true&target=${encodeURIComponent(uuid)}`;
-    console.log(`[WebSocket] Rewriting admin terminal: /api/clients/terminal?browser=true&target=${uuid}`);
+    path = `/api/clients/admin-terminal/${uuid}`;
+    console.log(`[WebSocket] Rewriting admin terminal path to: ${path}`);
   }
 
-  const upstreamUrl = `https://${CHOREO_ORIGIN}${WS_PATH_PREFIX}${path}${search}`;
+  const upstreamUrl = `https://${CHOREO_ORIGIN}${WS_PATH_PREFIX}${path}${url.search}`;
 
   console.log(`[WebSocket] Proxying to: ${upstreamUrl}`);
 
