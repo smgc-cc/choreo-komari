@@ -1,0 +1,174 @@
+name: Auto Update Komari Version
+
+on:
+  schedule:
+    # 每天 UTC 00:00 (北京时间 08:00) 运行
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Check, Update and Notify
+        id: update_script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          python -c "
+          import re
+          import json
+          import os
+          import urllib.request
+          import sys
+          import html
+
+          # --- 配置 ---
+          file_path = 'README.md'
+          api_url = 'https://api.github.com/repos/komari-monitor/komari/releases/latest'
+
+          def get_semver(ver_str):
+              clean_ver = ver_str.lstrip('v')
+              return [int(x) for x in clean_ver.split('.') if x.isdigit()]
+
+          def send_telegram(token, chat_id, version, body):
+              if not token or not chat_id:
+                  print('::warning::Telegram secrets not set.')
+                  return
+              
+              safe_body = html.escape(body)
+              pattern = r'\[([^\]]+)\]\((https?://[^)]+)\)'
+              
+              def link_replacer(match):
+                  text = match.group(1)
+                  url = match.group(2)
+                  # 这里使用转义的双引号，防止 Shell 截断
+                  return f'<a href=\"{url}\">{text}</a>'
+
+              body_with_links = re.sub(pattern, link_replacer, safe_body)
+
+              text_content = f'🚀 <b>Komari (Choreo) Update Detected!</b>\n\n<b>New Version:</b> {version}\n\n{body_with_links}'
+              
+              if len(text_content) > 400:
+                  text_content = text_content[:400] + '\n...(content truncated)...'
+
+              url = f'https://api.telegram.org/bot{token}/sendMessage'
+              
+              payload = {
+                  'chat_id': chat_id,
+                  'text': text_content,
+                  'parse_mode': 'HTML',
+                  'disable_web_page_preview': True
+              }
+              
+              headers = {'Content-Type': 'application/json'}
+              
+              try:
+                  req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers)
+                  urllib.request.urlopen(req)
+                  print(f'-> Telegram notification sent to {chat_id}')
+              except Exception as e:
+                  print(f'::error::HTML Send Failed: {e}')
+                  if 'parse_mode' in payload:
+                      del payload['parse_mode']
+                  payload['text'] = f'Kuma Update: {version}\n\n{body}'
+                  try:
+                      urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers))
+                      print('-> Sent as plain text fallback.')
+                  except Exception as e2:
+                      print(f'::error::Fallback failed: {e2}')
+
+          try:
+              # 1. 检查文件
+              if not os.path.exists(file_path):
+                  print('::error::README.md not found!')
+                  sys.exit(1)
+
+              with open(file_path, 'r', encoding='utf-8') as f:
+                  content = f.read()
+
+              # 2. 获取本地版本
+              ver_match = re.search(r'# Version\s+(v?[\d\.]+)', content)
+              if not ver_match:
+                  print('::warning::Cannot find current version in README format.')
+                  sys.exit(0)
+              local_ver = ver_match.group(1)
+              print(f'   Local Version: {local_ver}')
+
+              # 3. 获取远程版本
+              req = urllib.request.Request(api_url)
+              
+              # --- 修复点：先把 Token 取出来，避免在 f-string 内部嵌套引号 ---
+              gh_token = os.environ.get('GITHUB_TOKEN')
+              if gh_token:
+                  req.add_header('Authorization', f'token {gh_token}')
+              
+              with urllib.request.urlopen(req) as response:
+                  data = json.loads(response.read().decode())
+                  remote_ver = data['tag_name']
+                  remote_body = data['body']
+              print(f'   Remote Version: {remote_ver}')
+
+              # 4. 对比与执行
+              if get_semver(remote_ver) > get_semver(local_ver):
+                  print(f'-> New version found! Updating...')
+
+                  content = re.sub(r'(# Version\s+)(v?[\d\.]+)', rf'\g<1>{remote_ver}', content, count=1)
+                  content = re.sub(r'(# Releases\s*)([\s\S]*)', f'# Releases\n\n{remote_body}', content, count=1)
+
+                  with open(file_path, 'w', encoding='utf-8') as f:
+                      f.write(content)
+                  
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as gh_out:
+                      gh_out.write('updated=true\n')
+                      gh_out.write(f'new_version={remote_ver}\n')
+                  
+                  send_telegram(
+                      os.environ.get('TELEGRAM_TOKEN'), 
+                      os.environ.get('TELEGRAM_TO'), 
+                      remote_ver, 
+                      remote_body
+                  )
+                  
+              else:
+                  print('-> Local version is up to date.')
+
+          except Exception as e:
+              print(f'::error::Script failed: {e}')
+              sys.exit(1)
+          "
+
+      - name: Commit and Push changes
+        if: steps.update_script.outputs.updated == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update to ${{ steps.update_script.outputs.new_version }}"
+          git push
+
+  cleanup-runs:
+    runs-on: ubuntu-latest
+    needs: check-and-update
+    if: always()
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 7
+          keep_minimum_runs: 6
