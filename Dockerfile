@@ -29,6 +29,8 @@ ENV KOMARI_DB_TYPE=sqlite
 # 数据库路径现在通过软链接等同于 /app/data/komari.db
 ENV KOMARI_DB_FILE=/tmp/komari.db
 ENV KOMARI_LISTEN=0.0.0.0:8080
+# 禁用 WebSocket Origin 检查（因为请求经过 Cloudflare Worker 代理，Origin 和 Host 不匹配）
+ENV KOMARI_WS_DISABLE_ORIGIN=true
 
 # 复制 Caddy 配置文件
 COPY Caddyfile /app/Caddyfile
