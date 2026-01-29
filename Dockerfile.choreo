@@ -57,8 +57,12 @@ COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/ko
 
 # 设置权限
 RUN chmod +x /app/komari && \
-    mkdir -p /app/data && \
     chown -R komari:komari /app
+
+# 解决只读文件系统
+# 1. 删除原有的 data 目录
+# 2. 建立软链接，将 data 指向 /tmp，这样程序读写 ./data/ 时实际在读写 /tmp/
+RUN rm -rf /app/data && ln -s /tmp /app/data
 
 # 复制并授权脚本
 COPY backup.sh /app/backup.sh
@@ -69,9 +73,10 @@ RUN chmod +x /app/*.sh
 USER 10001
 
 # 环境变量配置
+ENV TZ=Asia/Shanghai
 ENV GIN_MODE=release
 ENV KOMARI_DB_TYPE=sqlite
-ENV KOMARI_DB_FILE=/app/data/komari.db
+ENV KOMARI_DB_FILE=/tmp/komari.db
 ENV KOMARI_LISTEN=0.0.0.0:8080
 ENV KOMARI_WS_LISTEN=0.0.0.0:8081
 
