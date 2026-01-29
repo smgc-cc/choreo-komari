@@ -101,7 +101,8 @@ create_backup() {
     rm -rf "$BACKUP_DIR" "/tmp/${BACKUP_FILE}"
 
     # 4. 清理旧备份 (保留7天)
-    OLD_DATE=$(date -d "7 days ago" +%Y%m%d)
+    # 使用时间戳计算，兼容 BusyBox date (Alpine)
+    OLD_DATE=$(date -d "@$(($(date +%s) - 7*86400))" +%Y%m%d)
     aws s3 ls "s3://${BUCKET_NAME}/backups/komari_backup_" | while read -r _ _ _ filename; do
         file_date=$(echo "$filename" | grep -oE "[0-9]{8}" | head -1)
         if [ -n "$file_date" ] && [ "$file_date" -lt "$OLD_DATE" ]; then
