@@ -5,13 +5,27 @@ FROM golang:alpine AS komari-builder
 
 WORKDIR /src
 
-RUN apk add --no-cache git build-base
+RUN apk add --no-cache git build-base nodejs npm
 
 RUN git clone https://github.com/komari-monitor/komari.git .
 
 RUN git fetch --tags && \
     LATEST_TAG=$(git describe --tags --abbrev=0) && \
     git checkout $LATEST_TAG
+
+RUN git clone https://github.com/komari-monitor/komari-web.git web && \
+    cd web && \
+    npm install && \
+    npm run build && \
+    cd .. && \
+    mkdir -p public/defaultTheme/dist && \
+    rm -rf public/defaultTheme/dist/* && \
+    cp -r web/dist/* public/defaultTheme/dist/ && \
+    cp -f web/komari-theme.json public/defaultTheme/ && \
+    if [ -f web/preview.png ]; then cp -f web/preview.png public/defaultTheme/; fi && \
+    if [ -f web/perview.png ]; then cp -f web/perview.png public/defaultTheme/; fi && \
+    if [ -f public/defaultTheme/preview.png ] && [ ! -f public/defaultTheme/perview.png ]; then cp -f public/defaultTheme/preview.png public/defaultTheme/perview.png; fi && \
+    if [ -f public/defaultTheme/perview.png ] && [ ! -f public/defaultTheme/preview.png ]; then cp -f public/defaultTheme/perview.png public/defaultTheme/preview.png; fi
 
 RUN VERSION=$(git describe --tags --always) && \
     HASH=$(git rev-parse --short HEAD) && \
@@ -26,7 +40,7 @@ RUN VERSION=$(git describe --tags --always) && \
 # ==========================================
 # 阶段 2: 构建 Komari Agent
 # ==========================================
-FROM golang:alpine AS angent-builder
+FROM golang:alpine AS agent-builder
 
 WORKDIR /src
 
