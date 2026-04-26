@@ -1,7 +1,32 @@
 # ==========================================
-# 阶段 1: 构建阶段 (Builder)
+# 阶段 1: 构建 Komari Server
 # ==========================================
-FROM golang:alpine AS builder
+FROM golang:alpine AS komari-builder
+
+WORKDIR /src
+
+RUN apk add --no-cache git build-base
+
+RUN git clone https://github.com/komari-monitor/komari.git .
+
+RUN git fetch --tags && \
+    LATEST_TAG=$(git describe --tags --abbrev=0) && \
+    git checkout $LATEST_TAG
+
+RUN VERSION=$(git describe --tags --always) && \
+    HASH=$(git rev-parse --short HEAD) && \
+    go get google.golang.org/grpc@v1.79.3 && \
+    go mod tidy && \
+    go mod download && \
+    CGO_ENABLED=1 go build \
+    -trimpath \
+    -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${VERSION} -X github.com/komari-monitor/komari/utils.VersionHash=${HASH}" \
+    -o komari .
+
+# ==========================================
+# 阶段 2: 构建 Komari Agent
+# ==========================================
+FROM golang:alpine AS angent-builder
 
 WORKDIR /src
 
@@ -28,12 +53,15 @@ RUN VERSION=$(git describe --tags --always) && \
     -o komari-agent .
 
 # ==========================================
-# 第二阶段：运行环境 (Final Image)
-# 基于 komari:latest
+# 第三阶段：运行环境 (Final Image)
+# 基于 Alpine
 # ==========================================
-FROM ghcr.io/komari-monitor/komari:latest
+FROM alpine:3.21
 
 USER root
+
+# 升级基础镜像中的 OpenSSL 包，修复 libcrypto3/libssl3 漏洞
+RUN apk upgrade --no-cache libcrypto3 libssl3
 
 # 安装工具
 RUN apk add --no-cache \
@@ -51,7 +79,8 @@ RUN curl -fsSL "https://github.com/aptible/supercronic/releases/latest/download/
     && chmod +x /usr/local/bin/supercronic
 
 # 复制二进制文件
-COPY --from=builder /src/komari-agent /app/komari-agent
+COPY --from=komari-builder /src/komari /app/komari
+COPY --from=agent-builder /src/komari-agent /app/komari-agent
 
 WORKDIR /app
 
