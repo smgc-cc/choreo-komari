@@ -13,7 +13,7 @@ RUN git fetch --tags && \
     LATEST_TAG=$(git describe --tags --abbrev=0) && \
     git checkout $LATEST_TAG
 
-COPY komari-readwait-env.patch /tmp/komari-readwait-env.patch
+COPY patch/komari-readwait-env.patch /tmp/komari-readwait-env.patch
 RUN git apply /tmp/komari-readwait-env.patch && gofmt -w api/client/report.go
 
 RUN git clone https://github.com/komari-monitor/komari-web.git web && \
@@ -113,18 +113,18 @@ ENV KOMARI_DB_TYPE=sqlite
 # 数据库路径现在通过软链接等同于 /app/data/komari.db
 ENV KOMARI_DB_FILE=/tmp/komari.db
 ENV KOMARI_LISTEN=0.0.0.0:8080
-# Agent WebSocket 在线判定超时，可在 Choreo 环境变量中覆盖（例如 60s、120s 或纯数字秒）
-ENV KOMARI_AGENT_READ_WAIT=60s
+# Agent WebSocket 在线判定超时，可在 Choreo 环境变量中覆盖（例如 30s、60s 或纯数字秒）
+ENV KOMARI_AGENT_READ_WAIT=30s
 # 禁用 WebSocket Origin 检查（因为请求经过 Cloudflare Worker 代理，Origin 和 Host 不匹配）
 ENV KOMARI_WS_DISABLE_ORIGIN=true
 
 # 复制 Caddy 配置文件
-COPY Caddyfile /app/Caddyfile
+COPY script/Caddyfile /app/Caddyfile
 
 # 复制并授权脚本
-COPY backup.sh /app/backup.sh
-COPY entrypoint.sh /app/entrypoint.sh
-COPY crontab /app/crontab
+COPY script/backup.sh /app/backup.sh
+COPY script/entrypoint.sh /app/entrypoint.sh
+COPY script/crontab /app/crontab
 RUN chmod +x /app/*.sh
 
 # 切换到 Choreo 指定用户
