@@ -10,7 +10,7 @@ diff --git a/api/client/report.go b/api/client/report.go
  	"sync"
  	"time"
 
-@@ -25,11 +27,27 @@ import (
+@@ -25,11 +27,30 @@ import (
  	"github.com/patrickmn/go-cache"
  )
 

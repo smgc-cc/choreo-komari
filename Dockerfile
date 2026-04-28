@@ -5,7 +5,7 @@ FROM golang:alpine AS komari-builder
 
 WORKDIR /src
 
-RUN apk add --no-cache git build-base nodejs npm
+RUN apk add --no-cache git build-base nodejs npm python3
 
 RUN git clone https://github.com/komari-monitor/komari.git .
 
@@ -13,8 +13,8 @@ RUN git fetch --tags && \
     LATEST_TAG=$(git describe --tags --abbrev=0) && \
     git checkout $LATEST_TAG
 
-COPY patch/komari-readwait-env.patch /tmp/komari-readwait-env.patch
-RUN git apply /tmp/komari-readwait-env.patch && gofmt -w api/client/report.go
+COPY patch/apply-komari-readwait-env.sh /tmp/apply-komari-readwait-env.sh
+RUN sh /tmp/apply-komari-readwait-env.sh
 
 RUN git clone https://github.com/komari-monitor/komari-web.git web && \
     cd web && \

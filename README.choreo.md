@@ -69,7 +69,7 @@ choreo-komari/
 ├── .choreo/
 │   └── component.yaml               # Choreo endpoint 配置
 ├── patch/
-│   └── komari-readwait-env.patch    # Agent WebSocket read wait 环境变量补丁
+│   └── apply-komari-readwait-env.sh # Agent WebSocket read wait 环境变量补丁脚本
 ├── script/
 │   ├── backup.sh                    # R2/WebDAV 备份与恢复
 │   ├── entrypoint.sh                # 容器启动脚本
