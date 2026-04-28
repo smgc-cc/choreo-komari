@@ -35,6 +35,14 @@ if 'func getReadWaitDuration() time.Duration' not in text:
         candidates = [line for line in text.splitlines() if 'readWait' in line]
         raise SystemExit('cannot find readWait const block to replace. candidates: ' + repr(candidates[:8]))
 
+if 'websocket report loop closed' not in text:
+    old = '''\t\t_, message, err := conn.ReadMessage()\n\t\tif err != nil {\n\t\t\tif websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {\n\t\t\t\tlog.Printf("Client %s connection error: %v", uuid, err)\n\t\t\t}\n\t\t\tbreak // 任何读错误（包括超时）都意味着连接已断开，退出循环\n\t\t}\n'''
+    new = '''\t\t_, message, err := conn.ReadMessage()\n\t\tif err != nil {\n\t\t\tlastReportAge := "unknown"\n\t\t\tif latestReport := ws.GetLatestReport()[uuid]; latestReport != nil {\n\t\t\t\tlastReportAge = time.Since(latestReport.UpdatedAt).String()\n\t\t\t}\n\t\t\tlog.Printf("Client %s websocket report loop closed, connID: %d, readWait: %s, lastReportAge: %s, err: %v", uuid, conn.ID, readWait, lastReportAge, err)\n\t\t\tif websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {\n\t\t\t\tlog.Printf("Client %s connection error: %v", uuid, err)\n\t\t\t}\n\t\t\tbreak // 任何读错误（包括超时）都意味着连接已断开，退出循环\n\t\t}\n'''
+    if old not in text:
+        matches = [line for line in text.splitlines() if 'ReadMessage()' in line or 'connection error' in line]
+        raise SystemExit('cannot find websocket read error block to instrument. candidates: ' + repr(matches[:8]))
+    text = text.replace(old, new, 1)
+
 report.write_text(text)
 PY
 
@@ -44,3 +52,4 @@ grep -q '"os"' api/client/report.go
 grep -q '"strconv"' api/client/report.go
 grep -q 'var readWait = getReadWaitDuration()' api/client/report.go
 grep -q 'KOMARI_AGENT_READ_WAIT' api/client/report.go
+grep -q 'websocket report loop closed' api/client/report.go

@@ -113,8 +113,8 @@ ENV KOMARI_DB_TYPE=sqlite
 # 数据库路径现在通过软链接等同于 /app/data/komari.db
 ENV KOMARI_DB_FILE=/tmp/komari.db
 ENV KOMARI_LISTEN=0.0.0.0:8080
-# Agent WebSocket 在线判定超时，可在 Choreo 环境变量中覆盖（例如 30s、60s 或纯数字秒）
-ENV KOMARI_AGENT_READ_WAIT=30s
+# Agent WebSocket 在线判定超时，可在 Choreo 环境变量中覆盖（例如 60s、120s 或纯数字秒）
+ENV KOMARI_AGENT_READ_WAIT=60s
 # 禁用 WebSocket Origin 检查（因为请求经过 Cloudflare Worker 代理，Origin 和 Host 不匹配）
 ENV KOMARI_WS_DISABLE_ORIGIN=true
 

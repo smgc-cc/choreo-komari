@@ -193,10 +193,10 @@ Dockerfile 已设置：
 | `KOMARI_DB_TYPE` | `sqlite` | 数据库类型 |
 | `KOMARI_DB_FILE` | `/tmp/komari.db` | SQLite 数据库路径 |
 | `KOMARI_LISTEN` | `0.0.0.0:8080` | Komari HTTP 监听地址 |
-| `KOMARI_AGENT_READ_WAIT` | `30s` | Agent WebSocket 在线判定 read wait，可覆盖 |
+| `KOMARI_AGENT_READ_WAIT` | `60s` | Agent WebSocket 在线判定 read wait，可覆盖 |
 | `KOMARI_WS_DISABLE_ORIGIN` | `true` | 禁用 WebSocket Origin 检查，适配 Worker 代理 |
 
-`KOMARI_AGENT_READ_WAIT` 支持类似 `30s`、`60s` 的 duration，也可设置为纯数字秒，具体由补丁逻辑处理。
+`KOMARI_AGENT_READ_WAIT` 支持类似 `60s`、`120s` 的 duration，也可设置为纯数字秒，具体由补丁逻辑处理。Choreo/Cloudflare 链路下建议保持在 `60s` 或更高，避免 Agent 上报间隔抖动时被过早判定离线。
 
 ## 备份与恢复
 
