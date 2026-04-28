@@ -6,7 +6,7 @@
 - 容器内同时构建并运行一个可选的 `komari-agent`
 - 运行时可写数据全部放到 `/tmp`
 - 通过 R2/S3 或 WebDAV 定时备份 `/tmp` 数据
-- REST 与 WebSocket 拆分到不同端口，符合 Choreo endpoint 限制
+- REST 与 Agent/终端 WebSocket 拆分到不同端口，符合 Choreo endpoint 限制
 - Cloudflare Worker 处理 Choreo Public URL 路径前缀与 WebSocket 路由
 
 ## 主要特性
@@ -17,7 +17,7 @@
 - 容器启动时自动恢复最新备份
 - 每 2 小时自动备份，默认保留 7 天
 - 备份 SQLite 数据库与 `theme/` 目录
-- Komari HTTP endpoint 与 WebSocket endpoint 分端口暴露
+- Komari HTTP endpoint 与 Agent/终端 WebSocket endpoint 分端口暴露
 - Caddy 将 Choreo WS endpoint 反向代理到 Komari 主服务
 - 可选启动内置 `komari-agent`，直接连接本机 `localhost:8080`
 

@@ -44,12 +44,39 @@ if 'websocket report loop closed' not in text:
     text = text.replace(old, new, 1)
 
 report.write_text(text)
+
+common_rpc = Path('api/jsonRpc/common.go')
+text = common_rpc.read_text()
+
+if 'recentReportOnlineGrace' not in text:
+    needle = '''var pingStatsCache = cache.New(1*time.Minute, 2*time.Minute)
+'''
+    if needle not in text:
+        raise SystemExit('cannot find pingStatsCache anchor in api/jsonRpc/common.go')
+    text = text.replace(needle, '''var pingStatsCache = cache.New(1*time.Minute, 2*time.Minute)
+
+const recentReportOnlineGrace = 10 * time.Second
+''', 1)
+
+old = '''			Online:         onlineSet[uuid],
+'''
+new = '''			Online:         onlineSet[uuid] || time.Since(rep.UpdatedAt) <= recentReportOnlineGrace,
+'''
+if new not in text:
+    if old not in text:
+        matches = [line for line in text.splitlines() if 'Online:' in line]
+        raise SystemExit('cannot find Online field anchor in api/jsonRpc/common.go. candidates: ' + repr(matches[:8]))
+    text = text.replace(old, new, 1)
+
+common_rpc.write_text(text)
 PY
 
-gofmt -w api/client/report.go
+gofmt -w api/client/report.go api/jsonRpc/common.go
 
 grep -q '"os"' api/client/report.go
 grep -q '"strconv"' api/client/report.go
 grep -q 'var readWait = getReadWaitDuration()' api/client/report.go
 grep -q 'KOMARI_AGENT_READ_WAIT' api/client/report.go
 grep -q 'websocket report loop closed' api/client/report.go
+grep -q 'recentReportOnlineGrace = 10 \* time.Second' api/jsonRpc/common.go
+grep -q 'time.Since(rep.UpdatedAt) <= recentReportOnlineGrace' api/jsonRpc/common.go
