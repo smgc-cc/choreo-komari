@@ -2,21 +2,21 @@
 
 # Version
 
-1.1.9
+1.2.0
 
 # Releases
 
 ## What's Changed
-* refactor: 按照业务整理api接口  by @Akizon77 in https://github.com/komari-monitor/komari/pull/482
-* fix: #363 IP地址出现乱码 by @Akizon77 in https://github.com/komari-monitor/komari/pull/483
-* fix: #393 验证流量限制字段为有效的非负整数值 by @Akizon77 in https://github.com/komari-monitor/komari/pull/484
-* fix: prevent SSRF in theme download by blocking private/internal IPs by @tranquac in https://github.com/komari-monitor/komari/pull/495
-* feat: 支持自定义排序延迟检测任务 by @airium in https://github.com/komari-monitor/komari/pull/485
-* fix: 表格显示模式下，“离线节点的显示位置”未遵循后台“默认主题设置” https://github.com/komari-monitor/komari/issues/491
-* feat: 添加在详情页显示服务器列表的功能 https://github.com/komari-monitor/komari/issues/475
+* fix: 防止无返回文本的远程执行结果被后端拒绝而变成超时 by @airium in https://github.com/komari-monitor/komari/pull/509
+* fix: mjpeg 价格周期与剩余时间显示错误 by @paulzzh in https://github.com/komari-monitor/komari/pull/504
+* fix: Optimize database indexes and improve performance on I/O-constrained hosts by @Lixsp11 in https://github.com/komari-monitor/komari/pull/511
+* feat: improve built-in cloudflared tunnel management by @KanameMadoka520 in https://github.com/komari-monitor/komari/pull/510
+* feat(ping): 延迟监测增加默认开启选项 by @iamsxm in https://github.com/komari-monitor/komari/pull/519
 
 ## New Contributors
-* @tranquac made their first contribution in https://github.com/komari-monitor/komari/pull/495
-* @airium made their first contribution in https://github.com/komari-monitor/komari/pull/485
+* @paulzzh made their first contribution in https://github.com/komari-monitor/komari/pull/504
+* @Lixsp11 made their first contribution in https://github.com/komari-monitor/komari/pull/511
+* @KanameMadoka520 made their first contribution in https://github.com/komari-monitor/komari/pull/510
+* @iamsxm made their first contribution in https://github.com/komari-monitor/komari/pull/519
 
-**Full Changelog**: https://github.com/komari-monitor/komari/compare/1.1.8...1.1.9
+**Full Changelog**: https://github.com/komari-monitor/komari/compare/1.1.9...1.2.0
