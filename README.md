@@ -2,21 +2,15 @@
 
 # Version
 
-1.2.0
+1.2.2
 
 # Releases
 
-## What's Changed
-* fix: 防止无返回文本的远程执行结果被后端拒绝而变成超时 by @airium in https://github.com/komari-monitor/komari/pull/509
-* fix: mjpeg 价格周期与剩余时间显示错误 by @paulzzh in https://github.com/komari-monitor/komari/pull/504
-* fix: Optimize database indexes and improve performance on I/O-constrained hosts by @Lixsp11 in https://github.com/komari-monitor/komari/pull/511
-* feat: improve built-in cloudflared tunnel management by @KanameMadoka520 in https://github.com/komari-monitor/komari/pull/510
-* feat(ping): 延迟监测增加默认开启选项 by @iamsxm in https://github.com/komari-monitor/komari/pull/519
+## 修复
+- 修复 1.2.1 中 v2 `agent.basicInfo` 路径未触发 GeoIP 补全的问题：新增服务器通过 v2 上报 basic info 时，现在会和 v1 一样根据 IPv4/IPv6 写入 `region`，区域旗帜可正常显示。
 
-## New Contributors
-* @paulzzh made their first contribution in https://github.com/komari-monitor/komari/pull/504
-* @Lixsp11 made their first contribution in https://github.com/komari-monitor/komari/pull/511
-* @KanameMadoka520 made their first contribution in https://github.com/komari-monitor/komari/pull/510
-* @iamsxm made their first contribution in https://github.com/komari-monitor/komari/pull/519
 
-**Full Changelog**: https://github.com/komari-monitor/komari/compare/1.1.9...1.2.0
+## 测试
+- `go test ./...`
+
+**Full Changelog**: https://github.com/komari-monitor/komari/compare/1.2.1...1.2.2
