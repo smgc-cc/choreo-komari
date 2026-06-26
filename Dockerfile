@@ -16,19 +16,19 @@ RUN git fetch --tags && \
 COPY patch/apply-komari-readwait-env.sh /tmp/apply-komari-readwait-env.sh
 RUN sh /tmp/apply-komari-readwait-env.sh
 
-RUN git clone https://github.com/komari-monitor/komari-web.git web && \
-    cd web && \
+RUN git clone https://github.com/komari-monitor/komari-web.git /tmp/komari-web && \
+    cd /tmp/komari-web && \
     npm install && \
     npm run build && \
-    cd .. && \
-    mkdir -p public/defaultTheme/dist && \
-    rm -rf public/defaultTheme/dist/* && \
-    cp -r web/dist/* public/defaultTheme/dist/ && \
-    cp -f web/komari-theme.json public/defaultTheme/ && \
-    if [ -f web/preview.png ]; then cp -f web/preview.png public/defaultTheme/; fi && \
-    if [ -f web/perview.png ]; then cp -f web/perview.png public/defaultTheme/; fi && \
-    if [ -f public/defaultTheme/preview.png ] && [ ! -f public/defaultTheme/perview.png ]; then cp -f public/defaultTheme/preview.png public/defaultTheme/perview.png; fi && \
-    if [ -f public/defaultTheme/perview.png ] && [ ! -f public/defaultTheme/preview.png ]; then cp -f public/defaultTheme/perview.png public/defaultTheme/preview.png; fi
+    cd /src && \
+    mkdir -p web/public/defaultTheme/dist && \
+    rm -rf web/public/defaultTheme/dist/* && \
+    cp -r /tmp/komari-web/dist/* web/public/defaultTheme/dist/ && \
+    cp -f /tmp/komari-web/komari-theme.json web/public/defaultTheme/ && \
+    if [ -f /tmp/komari-web/preview.png ]; then cp -f /tmp/komari-web/preview.png web/public/defaultTheme/; fi && \
+    if [ -f /tmp/komari-web/perview.png ]; then cp -f /tmp/komari-web/perview.png web/public/defaultTheme/; fi && \
+    if [ -f web/public/defaultTheme/preview.png ] && [ ! -f web/public/defaultTheme/perview.png ]; then cp -f web/public/defaultTheme/preview.png web/public/defaultTheme/perview.png; fi && \
+    if [ -f web/public/defaultTheme/perview.png ] && [ ! -f web/public/defaultTheme/preview.png ]; then cp -f web/public/defaultTheme/perview.png web/public/defaultTheme/preview.png; fi
 
 RUN VERSION=$(git describe --tags --always) && \
     HASH=$(git rev-parse --short HEAD) && \
