@@ -19,6 +19,7 @@ RUN sh /tmp/apply-komari-readwait-env.sh
 RUN git clone https://github.com/komari-monitor/komari-web.git /tmp/komari-web && \
     cd /tmp/komari-web && \
     npm install && \
+    npm install --no-save workbox-build@7.4.1 && \
     npm run build && \
     cd /src && \
     mkdir -p web/public/defaultTheme/dist && \
