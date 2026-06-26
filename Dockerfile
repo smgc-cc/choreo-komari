@@ -6,6 +6,7 @@ FROM golang:alpine AS komari-builder
 
 ARG KOMARI_VERSION=1.2.5
 ARG KOMARI_WEB_VERSION=1.2.5
+ARG KOMARI_GRPC_VERSION=v1.79.3
 
 WORKDIR /src
 
@@ -31,6 +32,8 @@ RUN curl -fsSL "https://github.com/komari-monitor/komari-web/releases/download/$
 
 RUN VERSION=$(git describe --tags --always) && \
     HASH=$(git rev-parse --short HEAD) && \
+    go get "google.golang.org/grpc@${KOMARI_GRPC_VERSION}" && \
+    go mod tidy && \
     go mod download && \
     CGO_ENABLED=1 go build \
     -trimpath \
