@@ -1,40 +1,36 @@
 # ==========================================
 # 阶段 1: 构建 Komari Server
+# 固定上游版本；前端使用 komari-web release artifact，避免在 Choreo 内跑 npm/Vite。
 # ==========================================
 FROM golang:alpine AS komari-builder
 
+ARG KOMARI_VERSION=1.2.5
+ARG KOMARI_WEB_VERSION=1.2.5
+
 WORKDIR /src
 
-RUN apk add --no-cache git build-base nodejs npm python3
+RUN apk add --no-cache git build-base curl unzip python3
 
 RUN git clone https://github.com/komari-monitor/komari.git .
 
-RUN git fetch --tags && \
-    LATEST_TAG=$(git describe --tags --abbrev=0) && \
-    git checkout $LATEST_TAG
+RUN git fetch --tags && git checkout "$KOMARI_VERSION"
 
 COPY patch/apply-komari-readwait-env.sh /tmp/apply-komari-readwait-env.sh
 RUN sh /tmp/apply-komari-readwait-env.sh
 
-RUN git clone https://github.com/komari-monitor/komari-web.git /tmp/komari-web && \
-    cd /tmp/komari-web && \
-    npm ci --include=dev --include=optional && \
-    node -e "require.resolve('workbox-build')" && \
-    npm run build && \
-    cd /src && \
+RUN curl -fsSL "https://github.com/komari-monitor/komari-web/releases/download/${KOMARI_WEB_VERSION}/dist-release.zip" -o /tmp/komari-web-dist.zip && \
+    unzip -q /tmp/komari-web-dist.zip -d /tmp/komari-web-release && \
     mkdir -p web/public/defaultTheme/dist && \
     rm -rf web/public/defaultTheme/dist/* && \
-    cp -r /tmp/komari-web/dist/* web/public/defaultTheme/dist/ && \
-    cp -f /tmp/komari-web/komari-theme.json web/public/defaultTheme/ && \
-    if [ -f /tmp/komari-web/preview.png ]; then cp -f /tmp/komari-web/preview.png web/public/defaultTheme/; fi && \
-    if [ -f /tmp/komari-web/perview.png ]; then cp -f /tmp/komari-web/perview.png web/public/defaultTheme/; fi && \
+    cp -r /tmp/komari-web-release/dist/* web/public/defaultTheme/dist/ && \
+    cp -f /tmp/komari-web-release/komari-theme.json web/public/defaultTheme/ && \
+    if [ -f /tmp/komari-web-release/preview.png ]; then cp -f /tmp/komari-web-release/preview.png web/public/defaultTheme/; fi && \
+    if [ -f /tmp/komari-web-release/perview.png ]; then cp -f /tmp/komari-web-release/perview.png web/public/defaultTheme/; fi && \
     if [ -f web/public/defaultTheme/preview.png ] && [ ! -f web/public/defaultTheme/perview.png ]; then cp -f web/public/defaultTheme/preview.png web/public/defaultTheme/perview.png; fi && \
     if [ -f web/public/defaultTheme/perview.png ] && [ ! -f web/public/defaultTheme/preview.png ]; then cp -f web/public/defaultTheme/perview.png web/public/defaultTheme/preview.png; fi
 
 RUN VERSION=$(git describe --tags --always) && \
     HASH=$(git rev-parse --short HEAD) && \
-    go get google.golang.org/grpc@v1.79.3 && \
-    go mod tidy && \
     go mod download && \
     CGO_ENABLED=1 go build \
     -trimpath \
@@ -42,39 +38,40 @@ RUN VERSION=$(git describe --tags --always) && \
     -o komari .
 
 # ==========================================
-# 阶段 2: 构建 Komari Agent
+# 阶段 2: 获取 Komari Agent
+# 使用上游 release binary，避免在 Choreo 内重复编译 agent。
 # ==========================================
 FROM golang:alpine AS agent-builder
 
+ARG KOMARI_AGENT_VERSION=1.2.13
+ARG TARGETARCH
+
 WORKDIR /src
 
-# 安装 git
-RUN apk add --no-cache git
+RUN apk add --no-cache curl
 
-# 1. 拉取源码
-RUN git clone https://github.com/komari-monitor/komari-agent.git .
-
-# 2. 检出最新的 Tag
-RUN git fetch --tags && \
-    LATEST_TAG=$(git describe --tags --abbrev=0) && \
-    git checkout $LATEST_TAG
-
-# 3. 编译并注入版本号
-RUN VERSION=$(git describe --tags --always) && \
-    echo "--------------------------------------" && \
-    echo "正在构建版本: $VERSION" && \
-    echo "--------------------------------------" && \
-    go mod download && \
-    CGO_ENABLED=0 go build \
-    -trimpath \
-    -ldflags="-s -w -X github.com/komari-monitor/komari-agent/update.CurrentVersion=${VERSION}" \
-    -o komari-agent .
+RUN set -eux; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "$arch" ]; then \
+        case "$(uname -m)" in \
+            x86_64) arch=amd64 ;; \
+            aarch64) arch=arm64 ;; \
+            armv7l) arch=arm ;; \
+            i386|i686) arch=386 ;; \
+            *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+        esac; \
+    fi; \
+    curl -fsSL "https://github.com/komari-monitor/komari-agent/releases/download/${KOMARI_AGENT_VERSION}/komari-agent-linux-${arch}" -o komari-agent; \
+    chmod +x komari-agent
 
 # ==========================================
 # 第三阶段：运行环境 (Final Image)
 # 基于 Alpine
 # ==========================================
 FROM alpine:3.21
+
+ARG SUPERCRONIC_VERSION=v0.2.46
+ARG TARGETARCH
 
 USER root
 
@@ -93,8 +90,19 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # 安装 supercronic (容器友好的 cron 替代品)
-RUN curl -fsSL "https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64" -o /usr/local/bin/supercronic \
-    && chmod +x /usr/local/bin/supercronic
+RUN set -eux; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "$arch" ]; then \
+        case "$(uname -m)" in \
+            x86_64) arch=amd64 ;; \
+            aarch64) arch=arm64 ;; \
+            armv7l) arch=arm ;; \
+            i386|i686) arch=386 ;; \
+            *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+        esac; \
+    fi; \
+    curl -fsSL "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${arch}" -o /usr/local/bin/supercronic; \
+    chmod +x /usr/local/bin/supercronic
 
 # 复制二进制文件
 COPY --from=komari-builder /src/komari /app/komari
@@ -110,6 +118,9 @@ RUN rm -rf /app/data && ln -s /tmp /app/data
 # 设置环境变量
 ENV TZ=Asia/Shanghai
 ENV GIN_MODE=release
+ENV HOME=/tmp
+ENV XDG_CONFIG_HOME=/tmp/.config
+ENV XDG_DATA_HOME=/tmp/.local/share
 ENV KOMARI_DB_TYPE=sqlite
 # 数据库路径现在通过软链接等同于 /app/data/komari.db
 ENV KOMARI_DB_FILE=/tmp/komari.db
