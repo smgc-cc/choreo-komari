@@ -1,0 +1,4 @@
+# google.golang.org/grpc v1.75.0 → 来自上游镜像 komari:latest，无法自行升级
+# gRPC-Go: Authorization bypass due to improper HTTP/2 path validation
+# 本项目未使用 gRPC authz，不受影响
+CVE-2026-33186
