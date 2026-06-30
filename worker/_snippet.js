@@ -169,10 +169,11 @@ export default {
  * 改写 Set-Cookie 中 session_token 的 Domain
  *
  * 上游返回: Set-Cookie: session_token=xxx; Path=/; HttpOnly; Secure; SameSite=Lax
- * 改写为:   Set-Cookie: session_token=xxx; Path=/; HttpOnly; Secure; SameSite=None; Domain=.{host}
+ * 改写为:   Set-Cookie: session_token=xxx; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.{host}
  *
- * Domain=.{host} 使 cookie 对 ws.{host} 也生效
- * SameSite 从 Lax 改为 None（跨子域名 WS 需要）
+ * Domain=.{host} 使 cookie 对 ws.{host} 子域名也生效
+ * SameSite 保持 Lax: ws.{host} 与 {host} 是同站(same-site)，Lax 即可
+ * 不能改为 None: Chrome 对 SameSite=None 有严格的第三方 cookie 限制，会导致登录失败
  */
 function rewriteCookieDomain(response, newHeaders, host) {
   const cookies = response.headers.getAll
@@ -181,15 +182,12 @@ function rewriteCookieDomain(response, newHeaders, host) {
 
   if (!cookies.length) return;
 
-  // 清除原有 Set-Cookie（newHeaders 从 response.headers 复制过来的）
   newHeaders.delete("Set-Cookie");
 
   for (const cookie of cookies) {
     if (cookie.includes("session_token")) {
-      // 加 Domain，SameSite 改为 None（跨子域 WS 需要 Secure + SameSite=None）
-      let rewritten = cookie
-        .replace(/;\s*SameSite=\w+/i, "; SameSite=None")
-        .replace(/;\s*Domain=[^;]*/i, ""); // 先删掉已有的 Domain（如果有）
+      // 只加 Domain，不改 SameSite
+      let rewritten = cookie.replace(/;\s*Domain=[^;]*/i, "");
       rewritten += `; Domain=.${host}`;
       newHeaders.append("Set-Cookie", rewritten);
     } else {
