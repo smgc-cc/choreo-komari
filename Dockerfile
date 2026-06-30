@@ -38,12 +38,12 @@ ENV KOMARI_LISTEN=0.0.0.0:8080
 ENV KOMARI_WS_DISABLE_ORIGIN=true
 
 # 复制 Caddy 配置文件
-COPY Caddyfile /app/Caddyfile
+COPY script/Caddyfile /app/Caddyfile
 
 # 复制并授权脚本
-COPY backup.sh /app/backup.sh
-COPY entrypoint.sh /app/entrypoint.sh
-COPY crontab /app/crontab
+COPY script/backup.sh /app/backup.sh
+COPY script/entrypoint.sh /app/entrypoint.sh
+COPY script/crontab /app/crontab
 RUN chmod +x /app/*.sh
 
 # 切换到 Choreo 指定用户
