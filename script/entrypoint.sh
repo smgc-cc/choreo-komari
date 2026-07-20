@@ -12,7 +12,7 @@ DB_FILE="/tmp/komari.db"
 
 # 如果未提供 UUID，自动生成一个
 if [ -z "$KOMARI_AGENT_UUID" ]; then
-    KOMARI_AGENT_UUID=$(date +%s%N | md5sum | awk '{print $1}')
+    KOMARI_AGENT_UUID=$(date +%s%N | md5sum | head -c 36)
     echo "Info: KOMARI_AGENT_UUID not set, generated random UUID: ${KOMARI_AGENT_UUID}"
 fi
 
