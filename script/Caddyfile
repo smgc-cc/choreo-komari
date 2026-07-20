@@ -1,29 +1,41 @@
 # Caddy :8081 (Choreo WS endpoint) → Komari :8080
 #
-# 1) admin-terminal 捷径 rewrite（绕过网关对 /api/admin 的限制）
-# 2) 仅终端路径接受 ?session_token= 并写成 Cookie（P0：不认其它路径的 query）
-# 3) 公开 /api/rpc2 等不处理 session query
+# 1) admin-terminal 捷径 rewrite
+# 2) 终端路径上的 ?session_token= → Cookie（兼容有/无 Choreo 网关前缀）
+# 3) 公开 /api/rpc2 不处理 session query
 
 :8081 {
-	# --- 终端捷径：/api/clients/admin-terminal/{uuid} → /api/admin/client/{uuid}/terminal
-	@admin_terminal path_regexp admin_terminal ^/api/clients/admin-terminal/([^/]+)/?$
+	# --- 终端捷径（Agent/Worker 用）
+	# /api/clients/admin-terminal/{uuid}
+	# 或 /default/komari/komari_ws/v1.0/api/clients/admin-terminal/{uuid}
+	@admin_terminal path_regexp admin_terminal (?:^|.*/)api/clients/admin-terminal/([^/]+)/?$
 	rewrite @admin_terminal /api/admin/client/{re.admin_terminal.1}/terminal
 
-	# --- 仅终端路径 + 带 session_token query → Cookie，并去掉 query
-	# 匹配 rewrite 之后的标准终端路径（也覆盖浏览器直连 /api/admin/client/.../terminal）
+	# --- 仅终端路径 + session_token query → Cookie
+	# 兼容：
+	#   /api/admin/client/{uuid}/terminal
+	#   /default/komari/komari_ws/v1.0/api/admin/client/{uuid}/terminal
+	#   rewrite 之后的 /api/admin/client/{uuid}/terminal
 	@terminal_session {
-		path_regexp terminal_path ^/api/admin/client/[^/]+/terminal/?$
+		path_regexp term_path (?:^|.*/)api/admin/client/[^/]+/terminal/?$
 		query session_token=*
 	}
 	handle @terminal_session {
-		# 覆盖 Cookie（终端鉴权只依赖 session_token）
 		request_header Cookie "session_token={query.session_token}"
-		# 避免 session 进入上游 access log / 应用
 		uri query -session_token
+		# 若仍带网关前缀，剥到 Komari 认识的路径
+		@with_prefix path_regexp strip_prefix ^/default/komari/komari_ws/v1\.0(/.*)$
+		rewrite @with_prefix {re.strip_prefix.1}
 		reverse_proxy localhost:8080
 	}
 
-	# --- 其它一切（含公开 WS）：原样反代，忽略 session_token query
+	# --- 其它：若路径仍带网关前缀则剥掉再反代
+	@ws_prefixed path_regexp ws_pref ^/default/komari/komari_ws/v1\.0(/.*)$
+	handle @ws_prefixed {
+		rewrite @ws_prefixed {re.ws_pref.1}
+		reverse_proxy localhost:8080
+	}
+
 	handle {
 		reverse_proxy localhost:8080
 	}
