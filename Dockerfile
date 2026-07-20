@@ -1,3 +1,6 @@
+# ==========================================
+# 基于上游 Komari 镜像进行 Choreo 适配
+# ==========================================
 FROM ghcr.io/komari-monitor/komari:latest
 
 USER root
@@ -17,7 +20,7 @@ RUN apk add --no-cache \
 RUN curl -fsSL "https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64" -o /usr/local/bin/supercronic \
     && chmod +x /usr/local/bin/supercronic
 
-# 复制二进制文件
+# 安装二进制文件
 COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/komari-agent
 
 WORKDIR /app
@@ -34,13 +37,11 @@ ENV KOMARI_DB_TYPE=sqlite
 # 数据库路径现在通过软链接等同于 /app/data/komari.db
 ENV KOMARI_DB_FILE=/tmp/komari.db
 ENV KOMARI_LISTEN=0.0.0.0:8080
-# 禁用 WebSocket Origin 检查（因为请求经过 Cloudflare Worker 代理，Origin 和 Host 不匹配）
+# 禁用 WebSocket Origin 检查（因为请求经过 Cloudflare / 自定义域名代理，Origin 和 Host 可能不匹配）
 ENV KOMARI_WS_DISABLE_ORIGIN=true
 
-# 复制 Caddy 配置文件
+# 复制 Choreo 适配脚本与配置
 COPY script/Caddyfile /app/Caddyfile
-
-# 复制并授权脚本
 COPY script/backup.sh /app/backup.sh
 COPY script/entrypoint.sh /app/entrypoint.sh
 COPY script/crontab /app/crontab
