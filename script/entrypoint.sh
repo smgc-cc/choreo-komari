@@ -11,8 +11,15 @@ KOMARI_AGENT_NAME=${KOMARI_AGENT_NAME:-"Local Agent"}
 DB_FILE="/tmp/komari.db"
 
 # 如果未提供 UUID，自动生成一个
+# 注意: `md5sum` 读 stdin 时输出是 "hash  -"，| head -c 36 会吃进尾部 "  -"，
+# 得到非法 UUID（如 "abc...def  -"），导致终端路径含空格、鉴权/路由异常。
 if [ -z "$KOMARI_AGENT_UUID" ]; then
-    KOMARI_AGENT_UUID=$(date +%s%N | md5sum | head -c 36)
+    if command -v uuidgen >/dev/null 2>&1; then
+        KOMARI_AGENT_UUID=$(uuidgen | tr 'A-F' 'a-f')
+    else
+        # 32 位 hex（md5 一行的第一列），不要用 head -c 截断整行
+        KOMARI_AGENT_UUID=$(printf '%s' "$(date +%s%N)-$$-$RANDOM" | md5sum | awk '{print $1}')
+    fi
     echo "Info: KOMARI_AGENT_UUID not set, generated random UUID: ${KOMARI_AGENT_UUID}"
 fi
 
