@@ -1,17 +1,30 @@
-# Caddy :8081 (Choreo WS) → Komari :8080
+# Caddy :8081 (Choreo WS endpoint) → Komari :8080
 #
-# - admin-terminal 路径 rewrite（绕过网关对 /api/admin 限制）
-# - ?session_token= → Cookie（sfun 页面跨到 chatsfun WS 时用，无 Cloudflare Worker）
+# 1) admin-terminal 捷径 rewrite（绕过网关对 /api/admin 的限制）
+# 2) 仅终端路径接受 ?session_token= 并写成 Cookie（P0：不认其它路径的 query）
+# 3) 公开 /api/rpc2 等不处理 session query
 
 :8081 {
-	# 1) 终端捷径路径
+	# --- 终端捷径：/api/clients/admin-terminal/{uuid} → /api/admin/client/{uuid}/terminal
 	@admin_terminal path_regexp admin_terminal ^/api/clients/admin-terminal/([^/]+)/?$
 	rewrite @admin_terminal /api/admin/client/{re.admin_terminal.1}/terminal
 
-	# 2) query session_token 写成 Cookie（覆盖 Cookie 头；终端只依赖 session）
-	@has_session query session_token=*
-	request_header @has_session Cookie "session_token={query.session_token}"
+	# --- 仅终端路径 + 带 session_token query → Cookie，并去掉 query
+	# 匹配 rewrite 之后的标准终端路径（也覆盖浏览器直连 /api/admin/client/.../terminal）
+	@terminal_session {
+		path_regexp terminal_path ^/api/admin/client/[^/]+/terminal/?$
+		query session_token=*
+	}
+	handle @terminal_session {
+		# 覆盖 Cookie（终端鉴权只依赖 session_token）
+		request_header Cookie "session_token={query.session_token}"
+		# 避免 session 进入上游 access log / 应用
+		uri query -session_token
+		reverse_proxy localhost:8080
+	}
 
-	# 3) 全部反代到 Komari（含已 rewrite 的终端与普通 /api/rpc2）
-	reverse_proxy localhost:8080
+	# --- 其它一切（含公开 WS）：原样反代，忽略 session_token query
+	handle {
+		reverse_proxy localhost:8080
+	}
 }
