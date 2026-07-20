@@ -1,17 +1,17 @@
-# Caddy configuration for Choreo deployment
-# 将 8081 端口的所有请求代理到 Komari 的 8080 端口
+# Caddy :8081 (Choreo WS) → Komari :8080
+#
+# - admin-terminal 路径 rewrite（绕过网关对 /api/admin 限制）
+# - ?session_token= → Cookie（sfun 页面跨到 chatsfun WS 时用，无 Cloudflare Worker）
 
 :8081 {
-    # 将 /api/clients/admin-terminal/{uuid} 重写回 /api/admin/client/{uuid}/terminal
-    # 这是为了绕过 Choreo WS 端点只允许 /api/clients/* 路径的限制
-    @admin_terminal path_regexp admin_terminal ^/api/clients/admin-terminal/(.+)$
-    handle @admin_terminal {
-        rewrite @admin_terminal /api/admin/client/{re.admin_terminal.1}/terminal
-        reverse_proxy localhost:8080
-    }
+	# 1) 终端捷径路径
+	@admin_terminal path_regexp admin_terminal ^/api/clients/admin-terminal/([^/]+)/?$
+	rewrite @admin_terminal /api/admin/client/{re.admin_terminal.1}/terminal
 
-    # 其他所有请求直接代理
-    handle {
-        reverse_proxy localhost:8080
-    }
+	# 2) query session_token 写成 Cookie（覆盖 Cookie 头；终端只依赖 session）
+	@has_session query session_token=*
+	request_header @has_session Cookie "session_token={query.session_token}"
+
+	# 3) 全部反代到 Komari（含已 rewrite 的终端与普通 /api/rpc2）
+	reverse_proxy localhost:8080
 }
