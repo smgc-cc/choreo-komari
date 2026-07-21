@@ -1,52 +1,151 @@
 /**
- * Cloudflare Snippet for Komari on Choreo (混合模式 - HTTP 部分)
+ * Cloudflare Snippet for Komari on Choreo（模式一，推荐）
  *
- * 处理所有 HTTP 流量（页面、API、静态资源），WebSocket 交给 Worker 处理。
- * Snippet 在返回 HTML 时注入脚本，将前端 WebSocket 连接重定向到 ws.{当前域名}，
- * 该子域名绑定到 Worker 的 Custom Domain。
+ * 默认：单域名。面板域名 = Choreo 自定义域 = Agent 域名。
  *
  * 架构:
- * - HTTP (页面/API/资源) → Snippet → Choreo HTTP 端点 [免费无限额度]
- * - WS (前端实时数据)    → ws.{host} (Worker Custom Domain) → Choreo WS 端点
+ * - HTTP → Snippet → CHOREO_ORIGIN + REST 前缀（toChoreoHttpPath）
+ * - WS   → 不进 Snippet；注入补 WS 路径前缀；WS_PUBLIC_HOST 空则同源
+ * - 官方 agent:
+ *     -e https://面板域名/default/komari/komari_ws/v1.0
+ *     WSS 原生穿透；HTTP 的 komari_ws 前缀由 Snippet 改写成 REST 前缀
  *
- * Cookie 处理:
- * - 上游 Set-Cookie 的 session_token 没有 Domain 属性（只对当前 host 生效）
- * - Snippet 给它加上 Domain=.{host}，使 cookie 对 ws.{host} 子域名也生效
- * - 这样终端等需要登录态的 WS 功能可以正常鉴权
+ * 可选：多域名时把 WS_PUBLIC_HOST 设为 Choreo 绑定域（见 README 附录）
+ * 终端跨注册域时注入 session_token query → Caddy 转 Cookie
  *
- * 配套:
- * - _worker.js: 部署为 Worker，添加 Custom Domain: ws.{host}
- * - _snippet.js: 部署为 Snippet
+ * 安全:
+ * - HTML Cache-Control: no-store
+ * - T 仅 /admin* /terminal* 且有 cookie 时注入
+ * - COOKIE_DOMAIN 默认空（host-only）
+ *
+ * 备选：全流量 Worker → _worker_standalone.js
  */
 
 // ============ 配置区域 ============
 
-const CHOREO_ORIGIN = "uuid-dev.e1-us-east-azure.choreoapis.dev";
+const CHOREO_ORIGIN =
+  "uuid-dev.e1-us-east-azure.choreoapis.dev";
 const HTTP_PATH_PREFIX = "/default/komari/v1.0";
+const WS_PATH_PREFIX = "/default/komari/komari_ws/v1.0";
+// 单域名：留空 = WebSocket 与页面同 host（推荐）
+// 多域名特例：填 Choreo 已绑定的域名，例如 "komari.example.com"
+const WS_PUBLIC_HOST = "";
+// 一般保持空。多服务共用父域时不要填 ".example.com"
+const COOKIE_DOMAIN = "";
+// 注入 T 的最大长度（异常 cookie 直接丢弃）
+const SESSION_TOKEN_MAX_LEN = 512;
 
-// 注入到 HTML 的脚本: 根据当前访问域名自动推导 WS 域名 (ws. 前缀)
-const WS_INJECT_SCRIPT = `<script>
+// ============ 注入脚本 ============
+
+function buildWsInjectScript(sessionToken) {
+  // sessionToken 仅后台/终端页非空；公开页为 ""
+  return `<script>
 (function(){
+  var P=${JSON.stringify(WS_PATH_PREFIX)};
+  var H=${JSON.stringify(WS_PUBLIC_HOST)};
+  var T=${JSON.stringify(sessionToken || "")};
   var O=window.WebSocket;
   window.WebSocket=function(u,p){
-    var o=new URL(u);
-    o.host="ws."+location.host;
-    return p!==void 0?new O(o+"",p):new O(o+"");
+    var o=new URL(u,location.href);
+    if(o.host===location.host||o.host===H||o.host===("ws."+location.host)){
+      o.host=H;
+      // 终端: 改写为 Caddy admin-terminal 捷径（网关对 /api/clients/* 更友好）
+      // 原: /api/admin/client/{uuid}/terminal
+      // 新: {P}/api/clients/admin-terminal/{uuid}?session_token=...
+      var m=o.pathname.match(/^(?:\\/default\\/komari\\/komari_ws\\/v1\\.0)?\\/api\\/admin\\/client\\/([^/]+)\\/terminal\\/?$/);
+      if(m){
+        var pref=P.replace(/\\/$/,"");
+        o.pathname=pref+"/api/clients/admin-terminal/"+m[1];
+        if(T&&!o.searchParams.get("session_token")){
+          o.searchParams.set("session_token",T);
+        }
+      } else {
+        if(P&&o.pathname.indexOf(P)!==0){
+          o.pathname=P.replace(/\\/$/,"")+o.pathname;
+        }
+      }
+    }
+    return p!==void 0?new O(o.href,p):new O(o.href);
   };
   window.WebSocket.prototype=O.prototype;
   for(var k in{CONNECTING:0,OPEN:1,CLOSING:2,CLOSED:3})window.WebSocket[k]=O[k];
 })();
 </script>`;
+}
 
-// ============ 代码区域 ============
+function readRequestCookie(request, name) {
+  const raw = request.headers.get("Cookie") || "";
+  for (const part of raw.split(";")) {
+    const i = part.indexOf("=");
+    if (i === -1) continue;
+    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return "";
+}
+
+/** 只允许合理字符，过长/怪异 cookie 不注入 */
+function sanitizeSessionToken(token) {
+  if (!token) return "";
+  if (token.length > SESSION_TOKEN_MAX_LEN) return "";
+  // 常见 session 形态：hex / base64url / uuid 变体
+  if (!/^[A-Za-z0-9._~\-+/=]+$/.test(token)) return "";
+  return token;
+}
+
+/**
+ * 仅后台 / 终端 SPA 路径注入 T。
+ * 首页与公开页不注入，降低 XSS 与 HTML 泄露面。
+ * 注意：从首页客户端路由进 /admin 需整页刷新后才有 T；
+ * 终端一般是 window.open('/terminal?uuid=') 全页加载，可命中。
+ */
+function shouldInjectSessionToken(path) {
+  if (!path) return false;
+  // 去掉尾斜杠（根除外）
+  let p = path;
+  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+  if (p === "/admin" || p.startsWith("/admin/")) return true;
+  if (p === "/terminal" || p.startsWith("/terminal/")) return true;
+  // 部分构建可能用 hash 路由；path 仍多为 /
+  return false;
+}
+
+function applyNoStore(headers) {
+  headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  headers.set("Pragma", "no-cache");
+  headers.set("Expires", "0");
+}
+
+/**
+ * 把浏览器/Agent 的 pathname 归一成 Choreo REST 上游路径。
+ *
+ * 1) 已带 HTTP 前缀 → 原样（防双重前缀）
+ * 2) 误带 WS 前缀（官方 agent 长基址）→ 换成 HTTP 前缀 + 剩余 path
+ * 3) 裸 /api/... → 加 HTTP 前缀
+ */
+function toChoreoHttpPath(path) {
+  const http = (HTTP_PATH_PREFIX || "").replace(/\/+$/, "") || "";
+  const ws = (WS_PATH_PREFIX || "").replace(/\/+$/, "") || "";
+  let p = path || "/";
+  if (!p.startsWith("/")) p = "/" + p;
+
+  if (http && (p === http || p.startsWith(http + "/"))) {
+    return p;
+  }
+  if (ws && (p === ws || p.startsWith(ws + "/"))) {
+    const rest = p.slice(ws.length) || "/";
+    return http + (rest.startsWith("/") ? rest : "/" + rest);
+  }
+  return http + p;
+}
+
+// ============ 主处理 ============
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
-    const requestHost = url.hostname; // 当前访问域名，用于 cookie domain
+    const requestHost = url.hostname;
 
-    // 处理 CORS 预检请求
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -60,25 +159,18 @@ export default {
     }
 
     let method = request.method;
+    if (method === "HEAD" && isSPARoute(path)) method = "GET";
 
-    // Safari HEAD 预取 → 转为 GET
-    if (method === 'HEAD' && isSPARoute(path)) {
-      method = 'GET';
-    }
+    const upstreamPath = toChoreoHttpPath(path);
+    const upstreamUrl = `https://${CHOREO_ORIGIN}${upstreamPath}${url.search}`;
 
-    const upstreamUrl = `https://${CHOREO_ORIGIN}${HTTP_PATH_PREFIX}${path}${url.search}`;
-
-    // 克隆请求头，替换 Host，剥离 Origin (避免 Komari CORS 403)
     const headers = new Headers();
     for (const [key, value] of request.headers.entries()) {
       const lk = key.toLowerCase();
-      if (lk !== 'host' && lk !== 'origin') {
-        headers.set(key, value);
-      }
+      if (lk !== "host" && lk !== "origin") headers.set(key, value);
     }
-    headers.set('Host', CHOREO_ORIGIN);
+    headers.set("Host", CHOREO_ORIGIN);
 
-    // 读取请求体
     let body = null;
     if (method !== "GET" && method !== "HEAD") {
       try {
@@ -89,33 +181,30 @@ export default {
     }
 
     try {
-      // 手动处理重定向: Gin 的尾斜杠 301 会丢 Choreo 路径前缀
       let response = await fetch(upstreamUrl, {
-        method: method,
-        headers: headers,
-        body: body,
+        method,
+        headers,
+        body,
         redirect: "manual",
       });
 
-      // 处理重定向(最多跟 3 次)
       let redirects = 0;
       while (response.status >= 300 && response.status < 400 && redirects < 3) {
         const location = response.headers.get("Location");
         if (!location) break;
-
         let redirectUrl;
         if (location.startsWith("/")) {
-          redirectUrl = `https://${CHOREO_ORIGIN}${HTTP_PATH_PREFIX}${location}`;
+          // Gin 相对 Location 也走归一化，避免 agent 长基址场景双重前缀
+          redirectUrl = `https://${CHOREO_ORIGIN}${toChoreoHttpPath(location)}`;
         } else if (location.startsWith("http")) {
           redirectUrl = location;
         } else {
           redirectUrl = new URL(location, upstreamUrl).href;
         }
-
         response = await fetch(redirectUrl, {
-          method: method,
-          headers: headers,
-          body: body,
+          method,
+          headers,
+          body,
           redirect: "manual",
         });
         redirects++;
@@ -129,8 +218,6 @@ export default {
       newHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
       newHeaders.set("Access-Control-Allow-Headers", "*");
 
-      // 改写 Set-Cookie: 给 session_token 加 Domain=.{host}
-      // 使 cookie 对 ws.{host} 子域名也生效（终端等 WS 功能需要登录态）
       rewriteCookieDomain(response, newHeaders, requestHost);
 
       if (!isHTML) {
@@ -141,12 +228,24 @@ export default {
         });
       }
 
-      // HTML 响应: 注入 WS 重定向脚本
+      // P0: 仅后台/终端路径注入非空 T
+      let sessionForInject = "";
+      if (shouldInjectSessionToken(path)) {
+        sessionForInject = sanitizeSessionToken(
+          readRequestCookie(request, "session_token")
+        );
+      }
+
       let html = await response.text();
-      html = html.replace(/<head([^>]*)>/i, `<head$1>${WS_INJECT_SCRIPT}`);
+      html = html.replace(
+        /<head([^>]*)>/i,
+        `<head$1>${buildWsInjectScript(sessionForInject)}`
+      );
 
       newHeaders.delete("Content-Length");
       newHeaders.set("Content-Type", "text/html; charset=utf-8");
+      // P0: HTML 一律禁止缓存（尤其是带 T 的后台页）
+      applyNoStore(newHeaders);
 
       return new Response(html, {
         status: response.status,
@@ -154,41 +253,50 @@ export default {
         headers: newHeaders,
       });
     } catch (error) {
-      return new Response(JSON.stringify({ status: "error", message: `Proxy error: ${error.message}` }), {
-        status: 502,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: `Proxy error: ${error.message}`,
+        }),
+        {
+          status: 502,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store",
+          },
         }
-      });
+      );
     }
   },
 };
 
-/**
- * 改写 Set-Cookie 中 session_token 的 Domain
- *
- * 上游返回: Set-Cookie: session_token=xxx; Path=/; HttpOnly; Secure; SameSite=Lax
- * 改写为:   Set-Cookie: session_token=xxx; Path=/; HttpOnly; Secure; SameSite=Lax; Domain=.{host}
- *
- * Domain=.{host} 使 cookie 对 ws.{host} 子域名也生效
- * SameSite 保持 Lax: ws.{host} 与 {host} 是同站(same-site)，Lax 即可
- * 不能改为 None: Chrome 对 SameSite=None 有严格的第三方 cookie 限制，会导致登录失败
- */
+function resolveSessionCookieDomain(requestHost, wsPublicHost) {
+  const forced = (COOKIE_DOMAIN || "").trim();
+  if (forced) return forced.startsWith(".") ? forced : `.${forced}`;
+
+  const host = (requestHost || "").toLowerCase();
+  const wsHost = (wsPublicHost || "").toLowerCase();
+  if (!host) return null;
+  if (!wsHost || wsHost === host) return null;
+  if (wsHost.endsWith("." + host)) return "." + host;
+  return null;
+}
+
 function rewriteCookieDomain(response, newHeaders, host) {
   const cookies = response.headers.getAll
     ? response.headers.getAll("Set-Cookie")
     : [response.headers.get("Set-Cookie")].filter(Boolean);
-
   if (!cookies.length) return;
 
-  newHeaders.delete("Set-Cookie");
+  const domain = resolveSessionCookieDomain(host, WS_PUBLIC_HOST);
+  if (!domain) return;
 
+  newHeaders.delete("Set-Cookie");
   for (const cookie of cookies) {
     if (cookie.includes("session_token")) {
-      // 只加 Domain，不改 SameSite
       let rewritten = cookie.replace(/;\s*Domain=[^;]*/i, "");
-      rewritten += `; Domain=.${host}`;
+      rewritten += `; Domain=${domain}`;
       newHeaders.append("Set-Cookie", rewritten);
     } else {
       newHeaders.append("Set-Cookie", cookie);
@@ -197,8 +305,10 @@ function rewriteCookieDomain(response, newHeaders, host) {
 }
 
 function isSPARoute(path) {
-  const isApiPath = path.startsWith('/api/');
-  const isStaticAsset = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|avif)$/i.test(path);
-  const isSpecialPath = path === '/favicon.ico' || path === '/manifest.json' || path.startsWith('/themes/');
-  return !isApiPath && !isStaticAsset && !isSpecialPath;
+  if (path.startsWith("/api/")) return false;
+  if (/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|avif)$/i.test(path))
+    return false;
+  if (path === "/favicon.ico" || path === "/manifest.json" || path.startsWith("/themes/"))
+    return false;
+  return true;
 }
