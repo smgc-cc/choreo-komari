@@ -83,7 +83,7 @@ komari-agent \
 
 **不要**写 `wss://` 作 `-e`。
 
-### 验证
+### 验证（单域名）
 
 ```bash
 # 注入（应看到 WebSocket 脚本与 komari_ws 前缀）
@@ -184,6 +184,59 @@ komari-agent \
 
 ---
 
+## 站点设置：CORS / WebSocket Origin / Agent 连接地址
+
+这三项由 **Komari 管理后台** 写入配置库（`configs` 表），**不是** Docker 环境变量，部署后登录面板配置即可（热更新，一般无需重启）。
+
+入口：**管理后台 → 设置 → 站点**（路径多为 `/admin/settings/site`）。
+
+| 界面名称 | 配置键 | 作用 |
+|---|---|---|
+| API CORS 允许列表 | `cors_allowed_origins` | 跨域浏览器请求 `/api/*` 时允许的 `Origin` |
+| WebSocket Origin 允许列表 | `ws_allowed_origins` | 校验 WebSocket 握手 `Origin` 时的允许列表 |
+| Agent 连接地址 | `script_domain` | 后台生成一键安装命令时填入的面板地址（**不**覆盖 agent 自己的 `-e`） |
+
+### 填写格式
+
+允许列表支持：
+
+- 完整 Origin：`https://komari.example.com`
+- 仅 host：`komari.example.com`
+- 多条：换行或英文逗号分隔
+- 可选：`*`（放行所有 Origin，谨慎使用）
+
+示例：
+
+```text
+https://komari.example.com
+https://other.example.com
+```
+
+### 与本部署的关系
+
+| 场景 | 是否必须改这三项 |
+|---|---|
+| 单域名、浏览器同源访问 | 通常 **不用改**；同源即放行 |
+| 模式一 Snippet，页面与 API 同源 | CORS 列表一般用不到 |
+| 模式一跨域调 API / 自定义前端 | 在 CORS 列表加入前端 Origin |
+| WebSocket Origin 校验 | 本镜像默认 `KOMARI_WS_DISABLE_ORIGIN=true`，**关闭**服务端 Origin 检查；若改为 `false`，则需在「WebSocket Origin 允许列表」写入页面 Origin，或保持同源 |
+| 安装脚本里的面板 URL | 在「Agent 连接地址」填用户应使用的地址；公网 agent 仍以实际 `-e` 为准（见 [AGENT.choreo.md](./AGENT.choreo.md)） |
+
+### 相关开关
+
+| 设置 | 默认 | 说明 |
+|---|---|---|
+| CORS 跨域请求校验（`cors_origin_check_enabled`） | 开启 | 关闭后不再校验 API CORS |
+| WebSocket Origin 校验（`ws_origin_check_enabled`） | 开启 | 关闭后不校验 WS Origin；**环境变量** `KOMARI_WS_DISABLE_ORIGIN=true` 可在进程级强制关闭（本 Dockerfile 默认已设） |
+
+### 注意
+
+- 修改后一般立即生效，无需重建镜像。
+- 配置保存在 `komari.db`，会随 [备份](#备份r2--webdav) 一起备份/恢复。
+- 「Agent 连接地址」只影响**面板生成的安装命令文案**；已部署节点不会因改此项自动换 endpoint。
+
+---
+
 ## 文件结构
 
 ```text
@@ -221,13 +274,13 @@ choreo-komari/
 | Agent | 官方 + **长基址** | 官方 + **短 `-e`** |
 | 边缘费用 | HTTP≈免费；WS 穿透 | 全流量计 Workers |
 | 终端 cookie | 同源即可 | 同源 Cookie |
-| 推荐 | **生产默认** | 无 Snippet 时 |
+| 推荐 | **生产默认** | 无 Snippet |
 
 ---
 
 ## 附录：Snippets 多域名特例（可选，非必须）
 
-仅当 **面板入口域名** 与 **Choreo 绑定域名** 不是同一个时使用（例如品牌域经 SaaS、snippets 域在另一 zone）。
+仅当 **面板入口域名** 与 **Choreo 绑定域名** 不是同一个时使用（例如品牌域经 SaaS、Snippets 基建域在另一 zone）。
 
 示例：
 
