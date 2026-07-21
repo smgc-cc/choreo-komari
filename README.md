@@ -31,5 +31,10 @@
 
 ---
 
-Choreo 部署与代理说明见 [README.choreo.md](./README.choreo.md)。  
-外部 Agent patch 说明见 [AGENT.choreo.md](./AGENT.choreo.md)。
+## 部署文档
+
+- **[README.choreo.md](./README.choreo.md)** — 部署说明  
+  - **模式一（推荐）**：Snippet + 官方 agent 长基址  
+  - **模式二**：全流量 Worker  
+  - 附录：多域名特例（可选）  
+- **[AGENT.choreo.md](./AGENT.choreo.md)** — 外部 Agent 配置（官方二进制）
