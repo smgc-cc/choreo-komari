@@ -1,42 +1,55 @@
-# Caddy :8081 (Choreo WS endpoint) → Komari :8080
+# Caddy :8081 (Choreo WS) → Komari :8080
 #
-# 1) admin-terminal 捷径 rewrite
-# 2) 终端路径上的 ?session_token= → Cookie（兼容有/无 Choreo 网关前缀）
-# 3) 公开 /api/rpc2 不处理 session query
+# 浏览器终端（Snippet 注入）:
+#   wss://komari.chatsfun.nyc.mn/default/komari/komari_ws/v1.0/api/clients/admin-terminal/{uuid}?session_token=...
+#
+# 网关可能保留前缀或已剥前缀，两种都要认。
+# session_token query → Cookie（Komari 只认 Cookie，不认 query）
 
 :8081 {
-	# --- 终端捷径（Agent/Worker 用）
-	# /api/clients/admin-terminal/{uuid}
-	# 或 /default/komari/komari_ws/v1.0/api/clients/admin-terminal/{uuid}
-	@admin_terminal path_regexp admin_terminal (?:^|.*/)api/clients/admin-terminal/([^/]+)/?$
-	rewrite @admin_terminal /api/admin/client/{re.admin_terminal.1}/terminal
+	# 1) 剥掉 Choreo WS 网关前缀（若仍在 path 上）
+	@ws_prefixed path_regexp ws_pref ^/default/komari/komari_ws/v1\.0(/.*)$
+	rewrite @ws_prefixed {re.ws_pref.1}
 
-	# --- 仅终端路径 + session_token query → Cookie
-	# 兼容：
-	#   /api/admin/client/{uuid}/terminal
-	#   /default/komari/komari_ws/v1.0/api/admin/client/{uuid}/terminal
-	#   rewrite 之后的 /api/admin/client/{uuid}/terminal
-	@terminal_session {
-		path_regexp term_path (?:^|.*/)api/admin/client/[^/]+/terminal/?$
+	# 2) 终端捷径 + session_token → Cookie + rewrite 到官方终端路径
+	@term_sess {
+		path_regexp ts ^/api/clients/admin-terminal/([^/]+)/?$
 		query session_token=*
 	}
-	handle @terminal_session {
-		request_header Cookie "session_token={query.session_token}"
-		uri query -session_token
-		# 若仍带网关前缀，剥到 Komari 认识的路径
-		@with_prefix path_regexp strip_prefix ^/default/komari/komari_ws/v1\.0(/.*)$
-		rewrite @with_prefix {re.strip_prefix.1}
-		reverse_proxy localhost:8080
+	handle @term_sess {
+		rewrite * /api/admin/client/{re.ts.1}/terminal
+		reverse_proxy localhost:8080 {
+			# header_up 比 request_header 更常见、兼容性更好
+			header_up Cookie "session_token={query.session_token}"
+			header_up -Origin
+		}
 	}
 
-	# --- 其它：若路径仍带网关前缀则剥掉再反代
-	@ws_prefixed path_regexp ws_pref ^/default/komari/komari_ws/v1\.0(/.*)$
-	handle @ws_prefixed {
-		rewrite @ws_prefixed {re.ws_pref.1}
-		reverse_proxy localhost:8080
+	# 3) 终端捷径（无 query，已有 Cookie 时）
+	@term_plain path_regexp tp ^/api/clients/admin-terminal/([^/]+)/?$
+	handle @term_plain {
+		rewrite * /api/admin/client/{re.tp.1}/terminal
+		reverse_proxy localhost:8080 {
+			header_up -Origin
+		}
 	}
 
+	# 4) 标准终端路径 + session query（兼容）
+	@admin_sess {
+		path_regexp as ^/api/admin/client/([^/]+)/terminal/?$
+		query session_token=*
+	}
+	handle @admin_sess {
+		reverse_proxy localhost:8080 {
+			header_up Cookie "session_token={query.session_token}"
+			header_up -Origin
+		}
+	}
+
+	# 5) 公开 WS 等
 	handle {
-		reverse_proxy localhost:8080
+		reverse_proxy localhost:8080 {
+			header_up -Origin
+		}
 	}
 }
