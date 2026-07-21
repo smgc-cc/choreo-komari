@@ -1,21 +1,34 @@
 /**
- * Cloudflare Worker for Komari on Choreo (完整独立版)
+ * Cloudflare Worker for Komari on Choreo — 模式二：全流量 Worker
  *
- * 不依赖 Snippet，独立处理所有 HTTP 和 WebSocket 流量。
- * 绑定自定义域名后即可完整运行 Komari。
- *
- * 部署:
- * 1. Workers & Pages → Create Worker → 粘贴此代码
- * 2. Settings → Domains & Routes → 添加自定义域名
+ * 适用：Snippet 套餐不可用。
+ * 绑定自定义域名（如 komari.example.com）后，HTTP + WebSocket 均由本 Worker 代理。
  *
  * 架构:
- * - HTTP  → Worker → Choreo HTTP 端点 (8080) → Komari
- * - WS    → Worker → Choreo WS 端点 (8081) → Caddy → Komari
+ * - HTTP → Worker → CHOREO_ORIGIN + REST 前缀 → Komari :8080
+ * - WS   → Worker → CHOREO_ORIGIN + WS 前缀 → Caddy :8081 → Komari
+ *
+ * 官方 agent — 短基址即可:
+ *   -e "https://你的Worker域名"
+ *   HTTP /api/clients/... → 自动加 REST 前缀
+ *   WS   /api/clients/... → 自动加 WS 前缀
+ *   （若误用长基址 .../komari_ws/v1.0，HTTP 会改写成 REST，WS 不重复加前缀）
+ *
+ * 浏览器:
+ *   同源 WS；Worker 自动补 WS 前缀；终端 session 走 Cookie（同源，无需 query 注入）
+ *
+ * 部署:
+ * 1. Workers & Pages → Create Worker → 粘贴本文件
+ * 2. Settings → Domains & Routes → 添加自定义域名
+ * 3. 注意 Workers 日请求额度（页面资源也计费）
+ *
+ * 推荐生产：模式一 Snippet（见 _snippet.js / README.choreo.md）
  */
 
 // ============ 配置区域 ============
 
-const CHOREO_ORIGIN = "uuid-dev.e1-us-east-azure.choreoapis.dev";
+const CHOREO_ORIGIN =
+  "uuid-dev.e1-us-east-azure.choreoapis.dev";
 const HTTP_PATH_PREFIX = "/default/komari/v1.0";
 const WS_PATH_PREFIX = "/default/komari/komari_ws/v1.0";
 
@@ -26,7 +39,6 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // CORS 预检
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -39,24 +51,58 @@ export default {
       });
     }
 
-    // WebSocket
     const upgrade = request.headers.get("Upgrade");
     if (upgrade && upgrade.toLowerCase() === "websocket") {
       return handleWebSocket(request, path, url.search);
     }
 
-    // HTTP
     return handleHTTP(request, url, path);
   },
 };
 
-// ==================== WebSocket ====================
+function stripTrailingSlash(s) {
+  return (s || "").replace(/\/+$/, "");
+}
+
+/** 与 Snippet 一致：裸 path / 误带 WS 前缀 → REST 前缀 */
+function toChoreoHttpPath(path) {
+  const http = stripTrailingSlash(HTTP_PATH_PREFIX);
+  const ws = stripTrailingSlash(WS_PATH_PREFIX);
+  let p = path || "/";
+  if (!p.startsWith("/")) p = "/" + p;
+
+  if (http && (p === http || p.startsWith(http + "/"))) return p;
+  if (ws && (p === ws || p.startsWith(ws + "/"))) {
+    const rest = p.slice(ws.length) || "/";
+    return http + (rest.startsWith("/") ? rest : "/" + rest);
+  }
+  return http + p;
+}
+
+/** WS 上游 path：已有前缀则保留；终端改 admin-terminal 捷径 */
+function toChoreoWsPath(path) {
+  const ws = stripTrailingSlash(WS_PATH_PREFIX);
+  let p = path || "/";
+  if (!p.startsWith("/")) p = "/" + p;
+
+  // 剥已有前缀再处理
+  if (ws && (p === ws || p.startsWith(ws + "/"))) {
+    p = p.slice(ws.length) || "/";
+  }
+
+  const m = p.match(/^\/api\/admin\/client\/([^/]+)\/terminal\/?$/);
+  if (m) {
+    p = `/api/clients/admin-terminal/${m[1]}`;
+  }
+
+  return ws + (p.startsWith("/") ? p : "/" + p);
+}
 
 async function handleWebSocket(request, path, search) {
-  const upstreamUrl = `https://${CHOREO_ORIGIN}${WS_PATH_PREFIX}${path}${search}`;
+  const upstreamPath = toChoreoWsPath(path);
+  const upstreamUrl = `https://${CHOREO_ORIGIN}${upstreamPath}${search}`;
 
   try {
-    // 从原始请求派生，保留 WebSocket 升级语义
     const upstreamRequest = new Request(upstreamUrl, request);
     upstreamRequest.headers.set("Host", CHOREO_ORIGIN);
     upstreamRequest.headers.delete("Origin");
@@ -74,21 +120,21 @@ async function handleWebSocket(request, path, search) {
 
     return response;
   } catch (error) {
-    return new Response(`WebSocket proxy error: ${error.message}`, { status: 502 });
+    return new Response(`WebSocket proxy error: ${error.message}`, {
+      status: 502,
+    });
   }
 }
-
-// ==================== HTTP ====================
 
 async function handleHTTP(request, url, path) {
   let method = request.method;
 
-  // Safari HEAD 预取 → 转 GET（SPA 路由需要完整响应）
   if (method === "HEAD" && isSPARoute(path)) {
     method = "GET";
   }
 
-  const upstreamUrl = `https://${CHOREO_ORIGIN}${HTTP_PATH_PREFIX}${path}${url.search}`;
+  const upstreamPath = toChoreoHttpPath(path);
+  const upstreamUrl = `https://${CHOREO_ORIGIN}${upstreamPath}${url.search}`;
   const headers = cloneHeaders(request.headers);
 
   let body = null;
@@ -101,7 +147,6 @@ async function handleHTTP(request, url, path) {
   }
 
   try {
-    // 手动处理重定向：Gin 尾斜杠 301 的 Location 会丢 Choreo 路径前缀
     let response = await fetch(upstreamUrl, {
       method,
       headers,
@@ -116,8 +161,7 @@ async function handleHTTP(request, url, path) {
 
       let redirectUrl;
       if (location.startsWith("/")) {
-        // 相对路径 → 重新加 Choreo 前缀
-        redirectUrl = `https://${CHOREO_ORIGIN}${HTTP_PATH_PREFIX}${location}${url.search}`;
+        redirectUrl = `https://${CHOREO_ORIGIN}${toChoreoHttpPath(location)}`;
       } else if (location.startsWith("http")) {
         redirectUrl = location;
       } else {
@@ -147,23 +191,21 @@ async function handleHTTP(request, url, path) {
     });
   } catch (error) {
     return new Response(
-      JSON.stringify({ status: "error", message: `Proxy error: ${error.message}` }),
+      JSON.stringify({
+        status: "error",
+        message: `Proxy error: ${error.message}`,
+      }),
       {
         status: 502,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       }
     );
   }
 }
 
-// ==================== 工具函数 ====================
-
-/**
- * 克隆请求头，替换 Host，剥离 Origin
- *
- * Origin 必须剥离：Worker 代理后 Host 变成 Choreo 域名，
- * 和浏览器 Origin 不匹配，Komari CORS 中间件会 403。
- */
 function cloneHeaders(originalHeaders) {
   const headers = new Headers();
   for (const [key, value] of originalHeaders.entries()) {
@@ -178,7 +220,9 @@ function cloneHeaders(originalHeaders) {
 
 function isSPARoute(path) {
   if (path.startsWith("/api/")) return false;
-  if (/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|avif)$/i.test(path)) return false;
-  if (path === "/favicon.ico" || path === "/manifest.json" || path.startsWith("/themes/")) return false;
+  if (/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|avif)$/i.test(path))
+    return false;
+  if (path === "/favicon.ico" || path === "/manifest.json" || path.startsWith("/themes/"))
+    return false;
   return true;
 }
