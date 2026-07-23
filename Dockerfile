@@ -26,9 +26,14 @@ COPY --from=ghcr.io/komari-monitor/komari-agent:latest /app/komari-agent /app/ko
 WORKDIR /app
 
 # --- 关键修复：解决只读文件系统 ---
-# 1. 删除原有的 data 目录
-# 2. 建立软链接，将 data 指向 /tmp，这样程序读写 ./data/ 时实际在读写 /tmp/
-RUN rm -rf /app/data && ln -s /tmp /app/data
+# Choreo 上 /app 只读，可写目录只有 /tmp
+# 1. ./data  -> /tmp           （主库/metrics/theme 等）
+# 2. ./backup -> /tmp/komari-upgrade-backup
+#    上游版本升级会 mkdir ./backup 并打包 upgrade-*.zip；不链到可写目录会报:
+#    [ERROR/DBCORE] [upgrade-backup] failed to create backup dir: mkdir ./backup: read-only file system
+RUN rm -rf /app/data /app/backup \
+    && ln -s /tmp /app/data \
+    && ln -s /tmp/komari-upgrade-backup /app/backup
 
 # 设置环境变量
 ENV TZ=Asia/Shanghai
