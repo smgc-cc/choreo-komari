@@ -212,6 +212,8 @@ export default {
 
       const contentType = response.headers.get("Content-Type") || "";
       const isHTML = contentType.includes("text/html");
+      // 仅脚本/样式：防止 SPA HTML 被当 JS 缓存；图片等静态资源不要误伤
+      const scriptOrStyle = isScriptOrStylePath(path);
 
       const newHeaders = new Headers(response.headers);
       newHeaders.set("Access-Control-Allow-Origin", "*");
@@ -219,6 +221,19 @@ export default {
       newHeaders.set("Access-Control-Allow-Headers", "*");
 
       rewriteCookieDomain(response, newHeaders, requestHost);
+
+      // 迁移模式/缺失 chunk 时上游可能对 /assets/*.js 返回 SPA HTML。
+      // 若注入并被 CF 缓存 → 白屏。仅对 js/css 等「脚本样式」路径拦截 HTML。
+      // 注意：不要对 /images/*.webp 等真实图片做 404 改写。
+      if (scriptOrStyle && isHTML) {
+        applyNoStore(newHeaders);
+        newHeaders.set("Content-Type", "text/plain; charset=utf-8");
+        newHeaders.delete("Content-Length");
+        return new Response("Not Found", {
+          status: 404,
+          headers: newHeaders,
+        });
+      }
 
       if (!isHTML) {
         return new Response(response.body, {
@@ -304,11 +319,27 @@ function rewriteCookieDomain(response, newHeaders, host) {
   }
 }
 
+/** 脚本/样式路径：上游若返回 HTML 应拦截，避免当 JS 被缓存 */
+function isScriptOrStylePath(path) {
+  if (!path) return false;
+  if (/\.(js|mjs|css|map)(\?|$)/i.test(path)) return true;
+  // /assets/ 下无扩展名的 chunk 少见，但常见带 hash 的 .js/.css 已由上面覆盖
+  return false;
+}
+
+function isStaticAssetPath(path) {
+  if (!path) return false;
+  if (path === "/favicon.ico" || path === "/manifest.json") return true;
+  if (path.startsWith("/assets/") || path.startsWith("/themes/") || path.startsWith("/images/"))
+    return true;
+  if (path.startsWith("/admin-app/")) return true;
+  return /\.(js|css|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|json)$/i.test(
+    path
+  );
+}
+
 function isSPARoute(path) {
   if (path.startsWith("/api/")) return false;
-  if (/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|map|json|webp|avif)$/i.test(path))
-    return false;
-  if (path === "/favicon.ico" || path === "/manifest.json" || path.startsWith("/themes/"))
-    return false;
+  if (isStaticAssetPath(path)) return false;
   return true;
 }
