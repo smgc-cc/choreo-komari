@@ -27,7 +27,10 @@ fi
 # 1. 初始化 /tmp 目录结构
 # ==============================
 echo "Initializing directory structure in /tmp..."
-mkdir -p /tmp/theme
+# komari-upgrade-backup: 对应 /app/backup 软链，供上游版本升级打包 ./data
+# theme / plugin 等数据目录在 restore 之后再创建，避免 BusyBox `cp -a`
+# 在目标已存在时嵌套成 /tmp/theme/theme/（主题市场安装包「备份了却还原丢」）。
+mkdir -p /tmp/komari-upgrade-backup
 
 # ==============================
 # 2. 启动定时备份任务 (supercronic)
@@ -39,8 +42,11 @@ supercronic /app/crontab &
 # 3. 尝试恢复备份
 # ==============================
 echo "Restoring backup if available..."
-# 注意：你的 backup.sh 内部也需要确保恢复的目标是 /tmp/komari.db
+# 恢复目标：/tmp（= /app/data）下的 komari.db / metrics.db / theme / plugin 等
 /app/backup.sh restore
+
+# 与上游 internal/server/bootstrap.go 对齐；备份没有对应项或全新安装时补齐空目录
+mkdir -p /tmp/theme /tmp/plugin /tmp/plugin-data /tmp/komari-upgrade-backup
 
 # ==============================
 # 4. 启动 komari-agent
