@@ -2,16 +2,37 @@
 
 # Version
 
-1.4.2
+1.4.3
 
 # Releases
 
-### Commits
+# 主要更新内容
 
-- pref: 减少重复查询 ([0ed14fc](https://github.com/komari-monitor/komari/commit/0ed14fc73d2fa5d01a8d41d99ad41b4406fe6120)) @Akizon77
-- fix(metricstore): do not delete metric history during startup ([a06d922](https://github.com/komari-monitor/komari/commit/a06d922d7834084b016eb19555088bbbab59db92)) @Akizon77
-- remove undefined metrics before reclaiming space ([5ea32c4](https://github.com/komari-monitor/komari/commit/5ea32c48b6c4418e1a5a99852b7e3b29af08abac)) @Akizon77
-- pref: reduce cpu usage while querying metrics ([16769d5](https://github.com/komari-monitor/komari/commit/16769d56870fa8636688b468a743cc134f379ea1)) @Akizon77
-- pref: mem alloc ([5879d4b](https://github.com/komari-monitor/komari/commit/5879d4b3da9b387812f2c9f118ae93692614311b)) @Akizon77
+- 重构管理后台侧边栏菜单，按操作、通知、主题、插件、系统、账户等模块重新分组，页面入口更清晰。
+- 备份、主题和插件上传统一改为分块上传：按 5MB 分块并行传输，失败自动重试，支持取消，并显示上传进度，大文件上传更稳定。
+- 插件配置页新增“保存并重新加载”操作，保存后自动重载插件；重载失败时配置仍会保留。
+- 主题与插件托管配置新增“节点”和“Ping 任务”选择器，可直接选择关联节点或任务。
+- 插件市场增加 Komari 版本兼容性检查，不满足要求时显示“需要更新 Komari”。
+- 内置流量报告页面新增迁移提示，并引导用户前往插件市场安装“流量定期报告”插件。
+- 数据库结构升级进入回收阶段后，由前端显示模拟进度，并持续探测服务恢复状态，避免进度长时间停留在 95%。
+- 插件、主题和导航菜单支持内联 SVG 图标。
+- 新增管理员原始 SQL 查询/执行 RPC，支持针对主库或指标库执行查询与写入，仅限管理员使用，并带行数限制和参数绑定。
+- 插件配置保存后自动重载插件，重载失败不影响已保存配置。
+- 改进 JS 运行时 `console` 输出：对象以 JSON 格式展示，错误信息输出具体错误消息。
+- 数据结构升级进度上限调整为 80%，避免在回收阶段显示接近完成的状态。
+- 升级脚本增加历史备份清理，并强化升级回滚；备份或下载失败时会中止升级并恢复服务。
+- 管理员上传备份后，服务自动重启以应用备份。
 
-**Full Changelog**: https://github.com/komari-monitor/komari/compare/1.4.1...1.4.2
+## Bug 修复
+
+- 修复中文环境 EULA 弹窗的触发与确认流程：仅在设置加载成功且未接受协议时显示，接受成功后才关闭，失败时保持打开。
+- 修复子进程继承运行时超时的问题，长任务不再受 runtime 级 `timeout` 影响。
+- 修复插件 RPC 结果直接 resolve 可能失败的问题，结果会先规范化为 JSON 兼容结构。
+- 修复 Agent 重启或计数器重置后流量增量计算错误的问题（#646）。
+
+## 其他
+
+- 内置流量报告计划在 1.5.0 移除，请迁移至“流量定期报告”插件。
+- 备份白名单现包含 plugin 与插件数据目录。
+- Dockerfile 改为使用 `COPY --chmod` 设置可执行权限。
+- 旧上传接口（备份、主题、插件）已被新的统一分块上传接口取代，请相关集成方同步调整。
