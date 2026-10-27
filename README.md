@@ -2,60 +2,32 @@
 
 # Version
 
-1.6.0-fix1
+1.6.1-fix1
 
 # Releases
 
-## 重大更改 BREAKING CHANGES
-- 移除剪贴板功能，`/admin/clipboard` 路由及对应 RPC 不再可用。
-- 移除 xterm.js 全局终端设置，`/admin/settings/xtermjs` 路由及 `admin:getXtermjsSettings`、`admin:setXtermjsSettings` 不再可用。
-- 移除负载告警规则，`/admin/notification/load` 路由及对应 RPC 不再可用。
-- 通知配置改为插件式通知渠道。旧消息发送器配置接口（`/admin/settings/message-sender`、`admin:getMessageSenderProvider`、`admin:setMessageSenderProvider`）以及内置 Bark、Email、JavaScript、Server酱³、Server酱 Turbo、Telegram 渠道已移除；Webhook 渠道保留。请安装并启用所需的通知渠道插件，通过 `/admin/notification/channels` 和 `/admin/notification/channel/configuration` 重新配置。
-- 移除访客审计 RPC `public:recordVisitorEvent`。
-
+# 1.6.1
 
 ## 主要更新内容
 
-- **通知系统全面重写**：移除旧的 `messageSender` 工厂模式（bark、email、Server酱³、Server酱Turbo、Telegram 等内置通道），替换为统一的 `NotificationChannel` 注册表。内置通道保留 Webhook 和 JavaScript，新增插件可通过 `server.registerNotificationChannel()` 注册自定义通知通道。JavaScript 通道现支持 `sendEvent(event)` 函数（回退到 `sendMessage`）。
-- **Agent 协议 v2 扩展**：新增 `agent.startupConfig` / `agent.startupConfig.result` 方法，管理员可在线获取 Agent 完整启动参数（含凭据）；新增 `agent.switchVersion` 方法，支持远程请求 Agent 切换版本。对应新增 `admin:getAgentStartupConfig` 和 `admin:switchAgentVersion` RPC 接口。
-- **WebSocket 压缩与心跳**：所有 WebSocket 连接（终端、客户端 v2、公共推送）现与浏览器协商压缩算法；v2 客户端连接引入 75 秒读超时 + Ping/Pong 心跳机制，替代原先 11 秒的固定读等待。
-- **JS 运行时增强**：`URL` 和 `URLSearchParams` 注入为全局变量；新增 `tls` 模块（`tls.connect` / `tls.createConnection`），支持 STARTTLS 升级；`net` 模块新增 `AttachSocket` / `DetachSocket` 以配合 TLS 握手。
-- **前端静态资源改为磁盘缓存**：启动时将内嵌 dist 解压至 `./cache/dist` 目录，不再全量驻留内存。
+- **优化后台导航**：重新整理侧边栏菜单分组，将运维工具、外观与扩展等入口归类展示，插件自定义页面独立收纳到“插件功能”菜单，减少查找和切换页面的成本。
+- **优化插件管理体验**：调整插件列表布局，支持搜索和快捷启停，插件配置可直接在弹窗中修改，减少页面来回跳转。
+- **完善插件市场交互**：支持按分类浏览、配合关键词搜索筛选；在市场中即可查看已安装版本与运行状态，并直接完成启停、配置、更新和卸载操作。
+- **统一加载体验**：更新加载动画，统一后台页面、登录、终端及文件管理等场景的加载展示，改善操作等待时的视觉反馈。
+- **优化历史数据查询**：重构监控指标与 Ping 历史数据的查询链路，优化批量读取、聚合、降采样和索引，减少对象分配与 CPU 开销。
+- **插件支持 WebSocket 服务**：插件可通过 `req.upgradeWebSocket()` 接受 WebSocket 连接，实现实时消息收发与交互。
+- **JavaScript 运行时升级**：服务端 JavaScript 引擎由 Goja 切换为 MoeJS，同步适配插件、JavaScript 通知及相关内置模块，并允许插件修改自身运行环境中的内建对象。
 
 ## Bug修复
 
-- 修复流量上报重试时可能将历史累计值误计为增量流量的问题（引入 `maxTrafficReportGap` 15 分钟上限及写锁串行化基线读写）。
-- 优化长时间断报的识别逻辑，减少误判。
+- 修复大量节点集中上报 Ping 结果时，队列容量不足导致部分结果丢失的问题。Ping 队列容量独立调整为 4096，常规上报队列保持 512。相关 [#694](https://github.com/komari-monitor/komari/issues/694)、[#695](https://github.com/komari-monitor/komari/pull/695) @cristianchiriac
+- 完善新指标查询与索引结构在 PostgreSQL、MySQL 下的兼容性。
 
 ## 其他
 
-- 移除剪贴板功能（数据库表、API 路由、RPC 方法全部删除）。
-- 移除负载通知（LoadNotification）功能及相关定时任务。
-- 移除未落地的访客审计（Visitor Audit）配置项。
-- 移除 xtermjs 独立设置接口。
-- Linux 构建添加 `-extldflags=-Wl,--strip-all` 减小二进制体积；zstd 编码器降低并发与内存占用；上报批处理队列从 4096 缩减至 512。
-- Docker 及 systemd 服务新增 `GODEBUG=disablethp=1` 环境变量。
-- 新增 `admin:getLastRunVersion` 接口，返回本次启动前记录的版本号。
-- `/admin` 路径现 302 重定向至 `/admin/dashboard`。
+- 更新开源依赖清单与引用说明。
+- 同步多语言翻译，完善新增菜单、插件分类及操作提示文案。
+- 简化部分服务端逻辑，优化内存分配与资源复用。
+- 更新项目说明与赞助信息，感谢 MooProxy 的支持。
 
-### Commits
-
-- 重定向旧版本的主题接口？ ([4ec22ed](https://github.com/komari-monitor/komari/commit/4ec22edf1f7de4374356c8b886ec73a25b619e17)) @Akizon77
-- 重写1下通知 ([d15f051](https://github.com/komari-monitor/komari/commit/d15f0512c753c7dd62ce9b873a7661726ccabe4d)) @Akizon77
-- 裁剪1下 ([f57461f](https://github.com/komari-monitor/komari/commit/f57461f87f6d14d09df89f927c30ad8e676a5c4e)) @Akizon77
-- 优化内存的分配喵，再压1点！ ([7e91794](https://github.com/komari-monitor/komari/commit/7e91794f246869991d566a9f75a777e4322c1664)) @Akizon77
-- 1点点小参数优化内存 ([2c3f228](https://github.com/komari-monitor/komari/commit/2c3f2281fad28299f01d91c6fb9ecdcd43976522)) @Akizon77
-- 添加1个小参数优化内存 ([154d2b8](https://github.com/komari-monitor/komari/commit/154d2b8af2bc177ad313194b794861c38ada52ce)) @Akizon77
-- 没有落地的访客审计功能先删掉吧 ([14bc87d](https://github.com/komari-monitor/komari/commit/14bc87d1e9ca39205102b5f8bdea8c86bcc6ab9c)) @Akizon77
-- xterm设置适用面有1点太少了 ([68c284d](https://github.com/komari-monitor/komari/commit/68c284d043de436ce2da70674d67a92b79fa209c)) @Akizon77
-- 剪切板也是1个用的比较少的功能，移除了喵 ([7d692d2](https://github.com/komari-monitor/komari/commit/7d692d2faf276a7c12520faaa8c41c38584bb484)) @Akizon77
-- 支持拿到Agent的运行参数了 ([29d309f](https://github.com/komari-monitor/komari/commit/29d309f4a11af20e11463b9a8d512ad077a7baec)) @Akizon77
-- 对于#675，有一个更简洁的方案可以试1下 ([70df320](https://github.com/komari-monitor/komari/commit/70df32096f5dcd3247c6ca6463b829f52b402c1c)) @Akizon77
-- Agent支持切换版本协议 ([9812acf](https://github.com/komari-monitor/komari/commit/9812acfd1106f29fa2f6d193207b005396bc78e0)) @Akizon77
-- 识别长时间断报优化一下 ([39cb3f5](https://github.com/komari-monitor/komari/commit/39cb3f59b2837e8d052203bfbbf3187888e5fa4c)) @Akizon77
-- js通知先加回来 ([a68704a](https://github.com/komari-monitor/komari/commit/a68704a42560b5297343a4f99d0143c34add3de5)) @Akizon77
-- 加1个通知升级提醒 ([e48aa1e](https://github.com/komari-monitor/komari/commit/e48aa1e76931132fb5dc93ce53763dd59df83d9f)) @Akizon77
-- 和浏览器1起协商ws压缩算法 ([13cbdca](https://github.com/komari-monitor/komari/commit/13cbdca545e3427f720cfe55a0db787048a0a3be)) @Akizon77
-- js通知沿用旧版本的逻辑 ([1b76b7a](https://github.com/komari-monitor/komari/commit/1b76b7ad5bc3de6529bb7f0577069b4ac241fec3)) @Akizon77
-
-**Full Changelog**: https://github.com/komari-monitor/komari/compare/1.5.1...1.6.0
+**升级提示**：本次更换了 JavaScript 运行时，使用自定义插件或 JavaScript 通知脚本的用户，建议升级后检查脚本运行情况。
